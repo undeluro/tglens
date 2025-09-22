@@ -12,6 +12,4 @@ __pycache__/
 .streamlit/secrets.toml
 
 # User data
-*.json
-.env
 archive/
