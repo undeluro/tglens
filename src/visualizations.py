@@ -935,7 +935,7 @@ def create_word_cloud(chat_df, chat_name):
 
         # Create word cloud
         wordcloud = WordCloud(
-            #width=400,
+            # width=400,
             background_color="white",
             max_words=100,
             colormap="viridis",
