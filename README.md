@@ -1,11 +1,11 @@
 # tglens - Telegram export analytics
 Gain insights into your Telegram chats and uncover trends in your messaging behavior.
 
-## What's under the hood?
-- **Streamlit** - Web interface
-- **Plotly** - Interactive charts and graphs  
-- **Pandas** - Data processing powerhouse
-- **WordCloud** - Word visualization
+### Created with
+- **Streamlit** - web interface
+- **Plotly** - interactive charts and graphs  
+- **Pandas** - data processing
+- **WordCloud** - word visualization
 
 ## Usage
 ~~‼️**WARNING**‼️ This app will be hosted on Streamlit Community Cloud. BUT I would definitely NOT recommend you upload any of your private info to a server you don't fully trust and know how it works (please don't do that). Even though Streamlit claims they store your data only in RAM, so it's deleted right after the end of session (which I think is probably true). Anyway, you will see a warning when using the hosted version of the app.~~
