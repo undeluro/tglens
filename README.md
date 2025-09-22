@@ -1,4 +1,4 @@
-# tglens - Telegram dump analytics
+# tglens - Telegram export analytics
 
 Gain valuable insights into your Telegram chats and uncover trends in your messaging behavior.
 
@@ -7,7 +7,7 @@ Gain valuable insights into your Telegram chats and uncover trends in your messa
 
 ~~Obviously, the easiest workaround is to run app locally and it's **really easy** even if you haven't done any of this things before.~~
 
-After some thinking, it was decided to leave the app local only.
+*After some thinking, it was decided to leave the app local only.*
 
 ### 🔒 Privacy first
 Your data never leaves your computer. Everything runs locally.
