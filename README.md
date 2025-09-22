@@ -27,7 +27,7 @@ Your data never leaves your computer. Everything runs locally.
 ### Step 2: Run the App
 ```bash
 # Clone this repository
-git clone ...
+git clone https://github.com/undeluro/glens.git
 cd tglens
 
 # Launch the app
