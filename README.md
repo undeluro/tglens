@@ -1,11 +1,11 @@
-# tglens - Telegram export analytics📊
+# tglens - Telegram export analytics
 
 Gain insights into your Telegram chats and uncover trends in your messaging behavior.
 
 ## Usage
-~~‼️ **WARNING** This app will be hosted on Streamlit Community Cloud. BUT I whould definitely NOT recommend you upload any of your private info to a server you don't fully trust and know how it works(please don't do that). Even though Streamlit claims they store your data only in RAM, so it's deleted right after the end of session(which I think is probably true). Anyway, you will see a warning when using the hosted version of the app.~~
+~~‼️**WARNING**‼️ This app will be hosted on Streamlit Community Cloud. BUT I would definitely NOT recommend you upload any of your private info to a server you don't fully trust and know how it works (please don't do that). Even though Streamlit claims they store your data only in RAM, so it's deleted right after the end of session (which I think is probably true). Anyway, you will see a warning when using the hosted version of the app.~~
 
-~~Obviously, the easiest workaround is to run app locally and it's **really easy** even if you haven't done any of this things before.~~
+~~Obviously, the easiest workaround is to run app locally and it's **really easy** even if you haven't done any of these things before.~~
 
 *After some thinking, it was decided to leave the app local only.*
 
@@ -19,9 +19,9 @@ Your data never leaves your computer. Everything runs locally.
 
 ### Step 1: Get your data
 1. Open **Telegram Desktop** (not mobile, not web version, not MacOS native). You need cross-platform Qt version.
-> **Note for macOS users**: You can install Telegram Desktop alongside the native version from the [official download page](https://desktop.telegram.org/)
-2. Go to Settings → Advanced(and sroll down) → Export Telegram data
-3. Choose **JSON** format and export your chats(we need only personal chats, so to speed up the process you may check only them)
+> **For macOS users**: You can install Telegram Desktop alongside the native version from the [official download page](https://desktop.telegram.org/)
+2. Go to Settings → Advanced (and scroll down) → Export Telegram data
+3. Choose **JSON** format and export your chats (we need only personal chats, so to speed up the process you may check only them)
 4. Wait for the export to complete
 
 ### Step 2: Clone the repo
@@ -37,14 +37,14 @@ uv run streamlit run app.py
 That's it.
 
 
-## 🛠️ What's under the hood?
+## What's under the hood?
 
-- **Streamlit** - Beautiful web interface
+- **Streamlit** - Web interface
 - **Plotly** - Interactive charts and graphs  
 - **Pandas** - Data processing powerhouse
 - **WordCloud** - Word visualization
 
-## 🤝 Contributing
+## Contributing
 
 Found a bug? Have an idea? Feel free to open an issue or submit a pull request.
 
