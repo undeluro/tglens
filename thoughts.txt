@@ -1,0 +1,71 @@
+tglens
+
+---
+{
+      "id": 122389,
+      "type": "message", can be phone_call
+      "date": "2025-06-28T17:02:42",
+      "date_unixtime": "1751119362",
+      "from": "Niyaz",
+      "from_id": "user900996247",
+      "text": "ahh yeah this may or may not happen",
+      "text_entities": [
+       {
+        "type": "plain",
+        "text": "ahh yeah this may or may not happen"
+       }
+      ]
+},
+
+{
+ "name": "Jiminy",
+ "type": "personal_chat",
+ "id": 5965280513,
+ "messages": [
+  {
+   "id": 1,
+   "type": "message",
+   "date": "2023-08-23T13:11:23",
+   "date_unixtime": "1692821483",
+   "from": "Jiminy Cricket",
+   "from_id": "user123450513",
+   "text": "You better trust your conscience",
+   "text_entities": [
+    {
+     "type": "plain",
+     "text": "You better trust your conscience"
+    }
+   ]
+  },
+  {
+   "id": 2,
+   "type": "message",
+   "date": "2023-08-23T13:13:20",
+   "date_unixtime": "1692821600",
+   "from": "Batman & Robin",
+   "from_id": "user6565661032",
+   "text": "What did you just say?",
+   "text_entities": [
+    {
+     "type": "plain",
+     "text": "What did you just say?"
+    }
+   ]
+  }
+ ]
+}
+---
+
+general tab:
+- overall msg cnt
+- activity trend(with every contact, msgs and calls)
+- weekday/hour heatmap
+- other statistic
+
+
+
+- message cnts
+- calls(and directions)
+- calls duration
+- kruzochkki cnt , how tho (ez -> "media_type": "video_message",)(directions)
+- audio msg cnt. avg audio message duration ("media_type": "voice_message",)(directions)
