@@ -457,21 +457,38 @@ def render_contact_analysis(messages_df):
 
     st.header("Contact Insights")
 
-    # Get unique chat names directly from dataframe
-    chat_names = messages_df["chat_name"].unique().tolist()
+    # Get unique combinations of chat name and ID to handle duplicate names
+    chat_options = messages_df[["chat_name", "chat_id"]].drop_duplicates()
+    
+    # Create display names that show both name and ID for disambiguation
+    chat_display_options = []
+    chat_lookup = {}
+    
+    for _, row in chat_options.iterrows():
+        chat_name = row["chat_name"]
+        chat_id = row["chat_id"]
+        display_name = f"{chat_name} (ID: {chat_id})"
+        chat_display_options.append(display_name)
+        chat_lookup[display_name] = (chat_name, chat_id)
 
-    if len(chat_names) == 0:
+    if len(chat_display_options) == 0:
         st.warning("No valid chats found in the data.")
         return
 
-    # Contact selector - simplified without session state conflicts
-    selected_chat = st.selectbox(
-        "Select a chat", options=chat_names, key="contact_selector"
+    # Contact selector with name + ID display
+    selected_display = st.selectbox(
+        "Select a chat", options=chat_display_options, key="contact_selector"
     )
 
-    if selected_chat:
-        # Filter messages for the selected chat
-        chat_df = messages_df[messages_df["chat_name"] == selected_chat]
+    if selected_display:
+        # Get the actual chat name and ID from the selection
+        selected_chat_name, selected_chat_id = chat_lookup[selected_display]
+        
+        # Filter messages for the selected chat using both name and ID for accuracy
+        chat_df = messages_df[
+            (messages_df["chat_name"] == selected_chat_name) & 
+            (messages_df["chat_id"] == selected_chat_id)
+        ]
 
         if chat_df.empty:
             st.warning("No messages found for this chat.")
@@ -572,7 +589,7 @@ def render_contact_analysis(messages_df):
 
         # Create timeline with full date range
         chat_timeline = create_full_timeline(
-            chat_df, full_start_date, full_end_date, selected_chat
+            chat_df, full_start_date, full_end_date, selected_chat_name
         )
         st.plotly_chart(chat_timeline, use_container_width=True)
 
@@ -648,7 +665,7 @@ def render_contact_analysis(messages_df):
 
         # Word Cloud
         st.subheader("☁️ Word Cloud")
-        create_word_cloud(chat_df, selected_chat)
+        create_word_cloud(chat_df, selected_chat_name)
 
 
 def create_full_timeline(chat_df, start_date, end_date, chat_name):
