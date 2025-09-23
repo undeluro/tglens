@@ -6,8 +6,7 @@ A Streamlit app for analyzing Telegram dumps
 import streamlit as st
 
 from src.data_loader import TelegramDataLoader
-from src.visualizations import render_general_overview
-from src.visualizations import render_contact_analysis
+from src.visualizations import render_general_overview, render_contact_analysis, render_group_insights
 
 
 def setup_page():
@@ -99,10 +98,11 @@ def main():
     # Load and process data
     messages = load_into_df(uploaded_file)
 
-    tab1, tab2 = st.tabs(
+    tab1, tab2, tab3 = st.tabs(
         [
             "📈 General Overview",
-            "👥 Contact Insights",
+            "👥 Contact Insights", 
+            "👥 Group Insights",
         ]
     )
 
@@ -114,6 +114,9 @@ def main():
 
     with tab2:
         render_contact_analysis(messages)
+
+    with tab3:
+        render_group_insights(messages)
 
 
 if __name__ == "__main__":

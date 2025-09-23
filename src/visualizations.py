@@ -987,3 +987,57 @@ def create_word_cloud(chat_df, chat_name):
         )
     except Exception as e:
         st.error(f"Error generating word cloud: {str(e)}")
+
+
+def render_group_insights(messages_df):
+    """Render the Group Insights tab"""
+    if messages_df is None or messages_df.empty:
+        st.warning("No messages data available.")
+        return
+
+    st.header("Group Insights")
+    
+    # Filter for group chats only
+    group_messages = messages_df[messages_df["chat_type"] == "group"]
+    
+    if group_messages.empty:
+        st.warning("No group chats found in your data.")
+        st.info("This analysis only works with group conversations (not private chats).")
+        return
+    
+    # Basic group statistics
+    total_groups = group_messages["chat_id"].nunique()
+    total_group_messages = len(group_messages)
+    
+    st.subheader("📊 Group Overview")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Total Groups", f"{total_groups:,}")
+    with col2:
+        st.metric("Group Messages", f"{total_group_messages:,}")
+    with col3:
+        avg_msgs_per_group = total_group_messages / total_groups if total_groups > 0 else 0
+        st.metric("Avg Messages/Group", f"{avg_msgs_per_group:.0f}")
+    
+    st.info("🚧 Group Insights feature is under development! More analytics coming soon...")
+    
+    # Show available groups for now
+    st.subheader("📋 Your Groups")
+    group_summary = (
+        group_messages.groupby(["chat_name", "chat_id"])
+        .size()
+        .reset_index(name="message_count")
+        .sort_values("message_count", ascending=False)
+    )
+    
+    st.dataframe(
+        group_summary,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "chat_name": "Group Name",
+            "chat_id": "Group ID", 
+            "message_count": st.column_config.NumberColumn("Messages", format="%d")
+        }
+    )
