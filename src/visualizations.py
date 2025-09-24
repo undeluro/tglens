@@ -81,7 +81,7 @@ def get_chat_summary(messages_df: pd.DataFrame) -> Optional[pd.DataFrame]:
 # renders tab 1
 def render_general_overview(messages_df):
     """Render the General Overview tab"""
-    st.header("General Overview")
+    st.header("General Overview of Private Chats")
 
     # Get basic statistics
     stats = get_basic_stats(messages_df)

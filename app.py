@@ -101,7 +101,7 @@ def main():
     tab1, tab2, tab3 = st.tabs(
         [
             "📈 General Overview",
-            "👥 Contact Insights", 
+            "🧑‍💻 Contact Insights", 
             "👥 Group Insights",
         ]
     )
