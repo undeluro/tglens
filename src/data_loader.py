@@ -64,6 +64,8 @@ class TelegramDataLoader:
                         "message_id": message.get("id", 0),
                         "from": message.get("from", "Unknown"),
                         "from_id": message.get("from_id", ""),
+                        "actor": message.get("actor", None),
+                        "actor_id": message.get("actor_id", None),
                         "date": message.get("date", ""),
                         "date_unixtime": message.get("date_unixtime", 0),
                         "text": text_content,
