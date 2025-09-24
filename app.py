@@ -82,7 +82,7 @@ def main():
             st.markdown("""
             **Step 2: Upload File**
             - Use the file uploader above
-            - Select your exported JSON file
+            - Select your exported JSON file (usually `result.json`)
             - Wait for processing to complete
             """)
         with col3:
