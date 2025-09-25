@@ -75,7 +75,9 @@ def main():
         messages = load_into_df(uploaded_file)
 
     if messages is None or messages.empty:
-        st.error("Something went wrong(see above). Please ensure you uploaded a valid JSON export.")
+        st.error(
+            "Something went wrong(see above). Please ensure you uploaded a valid JSON export."
+        )
         return
 
     # Show balloons only when new file is loaded (compare file objects)
@@ -86,8 +88,6 @@ def main():
         st.session_state.last_uploaded_file = uploaded_file
         st.balloons()
         st.toast(f"✅ Successfully loaded {len(messages):,} messages!")
-
-    
 
     tab1, tab2, tab3 = st.tabs(
         [

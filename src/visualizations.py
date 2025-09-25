@@ -83,9 +83,22 @@ def render_general_overview(messages_df):
     """Render the General Overview tab"""
     st.header("General Overview of Private Chats")
 
+    if messages_df is None or messages_df.empty:
+        st.warning("No messages data available.")
+        return
+
+    # Filter to only private chats (personal_chat and saved_messages)
+    private_chats_df = messages_df[
+        messages_df["chat_type"].isin(["personal_chat", "saved_messages"])
+    ].copy()
+
+    if private_chats_df.empty:
+        st.warning("No private chat messages found.")
+        return
+
     # Get basic statistics
-    stats = get_basic_stats(messages_df)
-    chat_summary = get_chat_summary(messages_df)
+    stats = get_basic_stats(private_chats_df)
+    chat_summary = get_chat_summary(private_chats_df)
 
     # Key Metrics Row
     st.subheader("📊 Key Metrics")
@@ -169,9 +182,9 @@ def render_general_overview(messages_df):
 
     with col2:
         st.subheader("📞 Calls Distribution")
-        if messages_df is not None:
+        if private_chats_df is not None:
             call_type_counts = (
-                messages_df[messages_df["action"] == "phone_call"]
+                private_chats_df[private_chats_df["action"] == "phone_call"]
                 .groupby("chat_name")
                 .size()
                 .reset_index(name="count")
@@ -192,8 +205,8 @@ def render_general_overview(messages_df):
 
     with col1:
         # Video and Voice messages count per contact
-        media_df = messages_df[
-            messages_df["media_type"].isin(["video_message", "voice_message"])
+        media_df = private_chats_df[
+            private_chats_df["media_type"].isin(["video_message", "voice_message"])
         ]
         if not media_df.empty:
             media_counts = (
@@ -240,7 +253,7 @@ def render_general_overview(messages_df):
 
     with col2:
         # Average call duration per contact
-        calls_df = messages_df[messages_df["action"] == "phone_call"]
+        calls_df = private_chats_df[private_chats_df["action"] == "phone_call"]
         if not calls_df.empty and "duration_seconds" in calls_df.columns:
             call_duration = (
                 calls_df.groupby("chat_name")["duration_seconds"].mean().reset_index()
@@ -313,9 +326,9 @@ def render_general_overview(messages_df):
     # Messages over time
 
     # Group by month for better visualization
-    messages_df["year_month"] = messages_df["datetime"].dt.to_period("M")
+    private_chats_df["year_month"] = private_chats_df["datetime"].dt.to_period("M")
     monthly_counts = (
-        messages_df.groupby("year_month").size().reset_index(name="message_count")
+        private_chats_df.groupby("year_month").size().reset_index(name="message_count")
     )
     monthly_counts["year_month_str"] = monthly_counts["year_month"].astype(str)
 
@@ -336,7 +349,7 @@ def render_general_overview(messages_df):
     with col1:
         st.subheader("⏰ Activity by Hour of Day")
         hourly_activity = (
-            messages_df.groupby("hour").size().reset_index(name="message_count")
+            private_chats_df.groupby("hour").size().reset_index(name="message_count")
         )
         fig = px.bar(
             hourly_activity,
@@ -362,7 +375,7 @@ def render_general_overview(messages_df):
             "Sunday",
         ]
         daily_activity = (
-            messages_df.groupby("weekday")
+            private_chats_df.groupby("weekday")
             .size()
             .reindex(weekday_order)
             .reset_index(name="message_count")
@@ -382,7 +395,8 @@ def render_general_overview(messages_df):
         st.plotly_chart(fig, width="stretch")
 
     # Activity Heatmap
-    st.plotly_chart(create_activity_heatmap(messages_df), width="stretch")
+    st.subheader("🔥 Activity Heatmap")
+    st.plotly_chart(create_activity_heatmap(private_chats_df), width="stretch")
 
     # Additional stats
     st.subheader("📝 Content Statistics")
@@ -455,10 +469,19 @@ def render_contact_analysis(messages_df):
         st.warning("No messages data available.")
         return
 
+    # Filter to only private chats (personal_chat and saved_messages)
+    private_chats_df = messages_df[
+        messages_df["chat_type"].isin(["personal_chat", "saved_messages"])
+    ].copy()
+
+    if private_chats_df.empty:
+        st.warning("No private chat messages found.")
+        return
+
     st.header("Contact Insights")
 
     # Get unique combinations of chat name and ID to handle duplicate names
-    chat_options = messages_df[["chat_name", "chat_id"]].drop_duplicates()
+    chat_options = private_chats_df[["chat_name", "chat_id"]].drop_duplicates()
 
     # Create display names that show both name and ID for disambiguation
     chat_display_options = []
@@ -485,9 +508,9 @@ def render_contact_analysis(messages_df):
         selected_chat_name, selected_chat_id = chat_lookup[selected_display]
 
         # Filter messages for the selected chat using both name and ID for accuracy
-        chat_df = messages_df[
-            (messages_df["chat_name"] == selected_chat_name)
-            & (messages_df["chat_id"] == selected_chat_id)
+        chat_df = private_chats_df[
+            (private_chats_df["chat_name"] == selected_chat_name)
+            & (private_chats_df["chat_id"] == selected_chat_id)
         ]
 
         if chat_df.empty:
@@ -607,8 +630,8 @@ def render_contact_analysis(messages_df):
         st.subheader("📅 Message Timeline")
 
         # Get the full date range from all messages
-        full_start_date = messages_df["datetime"].min()
-        full_end_date = messages_df["datetime"].max()
+        full_start_date = private_chats_df["datetime"].min()
+        full_end_date = private_chats_df["datetime"].max()
 
         # Create timeline with full date range
         chat_timeline = create_full_timeline(
@@ -773,7 +796,7 @@ def render_contact_analysis(messages_df):
                 st.info("No text length data available")
 
         # Activity heatmap
-        st.subheader("⏰ Activity Heatmap")
+        st.subheader("🔥 Activity Heatmap")
         heatmap_fig = create_activity_heatmap(chat_df)
         st.plotly_chart(heatmap_fig, width="stretch")
 
@@ -1066,7 +1089,7 @@ def create_word_cloud(chat_df, chat_name):
 
         # Create word cloud
         wordcloud = WordCloud(
-            # width=400,
+            width=400,
             background_color="white",
             max_words=100,
             colormap="viridis",
@@ -1105,14 +1128,15 @@ def create_word_cloud(chat_df, chat_name):
 
 def render_group_insights(messages_df):
     """Render the Group Insights tab"""
+
     if messages_df is None or messages_df.empty:
         st.warning("No messages data available.")
         return
 
-    st.header("Group Insights")
-
-    # Filter for group chats only
-    group_messages = messages_df[messages_df["chat_type"] == "private_group"]
+    # Filter for group chats only (include all group types)
+    group_messages = messages_df[
+        messages_df["chat_type"].isin(["private_group", "private_supergroup"])
+    ].copy()
 
     if group_messages.empty:
         st.warning("No group chats found in your data.")
@@ -1121,43 +1145,228 @@ def render_group_insights(messages_df):
         )
         return
 
-    # Basic group statistics
-    total_groups = group_messages["chat_id"].nunique()
-    total_group_messages = len(group_messages)
+    st.header("Group Insights")
 
-    st.subheader("📊 Group Overview")
-    col1, col2, col3 = st.columns(3)
+    # Get unique combinations of chat name and ID to handle duplicate names
+    chat_options = group_messages[["chat_name", "chat_id"]].drop_duplicates()
 
-    with col1:
-        st.metric("Total Groups", f"{total_groups:,}")
-    with col2:
-        st.metric("Group Messages", f"{total_group_messages:,}")
-    with col3:
-        avg_msgs_per_group = (
-            total_group_messages / total_groups if total_groups > 0 else 0
+    # Create display names that show both name and ID for disambiguation
+    chat_display_options = []
+    chat_lookup = {}
+
+    for _, row in chat_options.iterrows():
+        chat_name = row["chat_name"]
+        chat_id = row["chat_id"]
+        display_name = f"{chat_name} (ID: {chat_id})"
+        chat_display_options.append(display_name)
+        chat_lookup[display_name] = (chat_name, chat_id)
+
+    if len(chat_display_options) == 0:
+        st.warning("No valid group chats found in the data.")
+        return
+
+    # Group selector with name + ID display
+    selected_display = st.selectbox(
+        "Select a group", options=chat_display_options, key="group_selector"
+    )
+
+    if selected_display:
+        # Get the actual chat name and ID from the selection
+        selected_chat_name, selected_chat_id = chat_lookup[selected_display]
+
+        # Filter messages for the selected group using both name and ID for accuracy
+        chat_df = group_messages[
+            (group_messages["chat_name"] == selected_chat_name)
+            & (group_messages["chat_id"] == selected_chat_id)
+        ]
+
+        if chat_df.empty:
+            st.warning("No messages found for this group.")
+            return
+
+        # Basic stats for the group
+        total_messages = len(chat_df)
+        calls_df = chat_df[chat_df["action"] == "phone_call"]
+        total_calls = len(calls_df)
+        avg_call_duration = (
+            calls_df["duration_seconds"].mean()
+            if len(calls_df) > 0 and "duration_seconds" in calls_df.columns
+            else 0
         )
-        st.metric("Avg Messages/Group", f"{avg_msgs_per_group:.0f}")
+        # Media statistics - calculate once
+        media_df = chat_df[chat_df["media_type"].notna()]
+        total_media = len(media_df)
+        voice_messages = len(media_df[media_df["media_type"] == "voice_message"])
+        video_messages = len(media_df[media_df["media_type"] == "video_message"])
+        unique_participants = chat_df["from"].nunique()
 
-    st.info(
-        "🚧 Group Insights feature is under development! More analytics coming soon..."
-    )
+        # Key Metrics
+        st.subheader("📊 Key Metrics")
+        col1, col2, col3, col4, col5, col6 = st.columns(6)
 
-    # Show available groups for now
-    st.subheader("📋 Your Groups")
-    group_summary = (
-        group_messages.groupby(["chat_name", "chat_id"])
-        .size()
-        .reset_index(name="message_count")
-        .sort_values("message_count", ascending=False)
-    )
+        with col1:
+            st.metric(label="👥 Participants", value=f"{unique_participants:,}")
 
-    st.dataframe(
-        group_summary,
-        width="stretch",
-        hide_index=True,
-        column_config={
-            "chat_name": "Group Name",
-            "chat_id": "Group ID",
-            "message_count": st.column_config.NumberColumn("Messages", format="%d"),
-        },
-    )
+        with col2:
+            st.metric(label="💬 Total Messages", value=f"{total_messages:,}")
+
+        with col3:
+            st.metric(label="📞 Total Calls", value=f"{total_calls:,}")
+
+        with col4:
+            st.metric(label="🎵 Voice Messages", value=f"{voice_messages:,}")
+
+        with col5:
+            st.metric(label="🎥 Video Messages", value=f"{video_messages:,}")
+
+        with col6:
+            st.metric(label="🖼️ Media Messages", value=f"{total_media:,}")
+
+        # Additional Key Metrics row
+        st.subheader("📈 Detailed Analytics")
+        col1, col2, col3, col4, col5 = st.columns(5)
+
+        with col1:
+            # Calculate conversation span
+            first_message = chat_df["datetime"].min()
+            last_message = chat_df["datetime"].max()
+            total_days = (last_message - first_message).days + 1
+            avg_messages_per_day = total_messages / max(total_days, 1)
+            st.metric(
+                label="📅 Messages/Day",
+                value=f"{avg_messages_per_day:.1f}",
+                help=f"Conversation span: {total_days} days",
+            )
+
+        with col2:
+            # Most active hour
+            if "hour" in chat_df.columns:
+                hourly_activity = chat_df.groupby("hour").size()
+                most_active_hour = (
+                    hourly_activity.idxmax() if not hourly_activity.empty else 0
+                )
+                st.metric(
+                    label="🕐 Most Active Hour",
+                    value=f"{most_active_hour}:00",
+                    help="Hour with most messages",
+                )
+            else:
+                st.metric(label="🕐 Most Active Hour", value="N/A")
+
+        with col3:
+            # Most active weekday
+            if "weekday" in chat_df.columns:
+                daily_activity = chat_df.groupby("weekday").size()
+                most_active_day = (
+                    daily_activity.idxmax() if not daily_activity.empty else "Unknown"
+                )
+                st.metric(
+                    label="📆 Most Active Day",
+                    value=most_active_day,
+                    help="Day of week with most messages",
+                )
+            else:
+                st.metric(label="📆 Most Active Day", value="N/A")
+
+        with col4:
+            # Average message length
+            avg_message_length = (
+                chat_df["text_length"].mean() if len(chat_df) > 0 else 0
+            )
+            st.metric(
+                label="📏 Avg Message Length",
+                value=f"{avg_message_length:.1f}",
+                help="Average characters per message",
+            )
+
+        with col5:
+            # Average call duration
+            if avg_call_duration > 0:
+                minutes = int(avg_call_duration // 60)
+                seconds = int(avg_call_duration % 60)
+                duration_display = f"{minutes}:{seconds:02d}"
+            else:
+                duration_display = "0:00"
+            st.metric(
+                label="⏱️ Avg Call Duration",
+                value=duration_display,
+                help="Average duration of group calls",
+            )
+
+        # Create full timeline spanning entire period
+        st.subheader("📅 Message Timeline")
+
+        # Get the full date range from chat messages
+        full_start_date = chat_df["datetime"].min()
+        full_end_date = chat_df["datetime"].max()
+
+        # Create timeline with full date range
+        group_timeline = create_full_timeline(
+            chat_df, full_start_date, full_end_date, selected_chat_name
+        )
+        st.plotly_chart(group_timeline, width="stretch")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            # Participant Activity Distribution
+            st.subheader("👥 Participant Activity Distribution")
+            # Message count per participant (pie chart)
+            has_message_participants = (
+                "from" in chat_df.columns and not chat_df["from"].isna().all()
+            )
+
+            if has_message_participants:
+                message_stats = (
+                    chat_df[chat_df["from"].notna()]
+                    .groupby("from")
+                    .size()
+                    .reset_index(name="message_count")
+                    .sort_values("message_count", ascending=False)
+                    .head(10)
+                )
+
+                if not message_stats.empty:
+                    fig = px.pie(
+                        message_stats,
+                        values="message_count",
+                        names="from",
+                        title="Participant Activity (by Messages)",
+                        color_discrete_sequence=px.colors.qualitative.Set3,
+                    )
+                    fig.update_traces(textposition="inside", textinfo="percent+label")
+                    fig.update_layout(height=400)
+                    st.plotly_chart(fig, width="stretch")
+                else:
+                    st.info("No participant data available")
+            else:
+                st.info("No participant data available")
+
+        with col2:
+            # Media Analysis
+            st.subheader("🎭 Media Content Analysis")
+            if total_media > 0:
+                media_df = chat_df[chat_df["media_type"].notna()]
+                media_counts = media_df["media_type"].value_counts().reset_index()
+                media_counts.columns = ["media_type", "count"]
+
+                fig = px.pie(
+                    media_counts,
+                    values="count",
+                    names="media_type",
+                    title="Media Types Distribution",
+                    color_discrete_sequence=px.colors.qualitative.Set3,
+                )
+                fig.update_traces(textposition="inside", textinfo="percent+label")
+                fig.update_layout(height=400)
+                st.plotly_chart(fig, width="stretch")
+            else:
+                st.info("No media messages found in this group")
+
+        # Activity Heatmap
+        st.subheader("🔥 Activity Heatmap")
+        st.plotly_chart(create_activity_heatmap(chat_df), width="stretch")
+
+        # Word Cloud
+        st.subheader("☁️ Word Cloud")
+        create_word_cloud(chat_df, selected_chat_name)
