@@ -5,8 +5,12 @@ A Streamlit app for analyzing Telegram dumps
 
 import streamlit as st
 
-from src.data_loader import TelegramDataLoader
-from src.visualizations import render_general_overview, render_contact_analysis, render_group_insights
+from src.data_loader import load_into_df
+from src.visualizations import (
+    render_general_overview,
+    render_contact_analysis,
+    render_group_insights,
+)
 
 
 def setup_page():
@@ -16,35 +20,6 @@ def setup_page():
         page_icon="📊",
         layout="wide",
     )
-
-
-def load_into_df(uploaded_file):
-    """Load and process the uploaded Telegram data"""
-    if uploaded_file is None:
-        return None
-
-    # Use session state to cache processed data and prevent re-processing
-    if (
-        "messages_df" not in st.session_state
-        or st.session_state.get("last_file_name") != uploaded_file.name
-    ):
-        with st.spinner("🔄 Loading and processing your Telegram data..."):
-            data_loader = TelegramDataLoader()
-
-            if data_loader.load_from_file(uploaded_file):
-                messages_df = data_loader.extract_messages()
-                if messages_df is not None:
-                    st.session_state.messages_df = messages_df
-                    st.session_state.last_file_name = uploaded_file.name
-                    st.balloons()  # Only show balloons on successful new load
-                    return messages_df
-                else:
-                    return None
-            else:
-                return None
-
-    # Return cached data without balloons
-    return st.session_state.messages_df
 
 
 def main():
@@ -96,12 +71,28 @@ def main():
         return
 
     # Load and process data
-    messages = load_into_df(uploaded_file)
+    with st.spinner("🔄 Loading and processing your Telegram data..."):
+        messages = load_into_df(uploaded_file)
+
+    if messages is None or messages.empty:
+        st.error("Something went wrong(see above). Please ensure you uploaded a valid JSON export.")
+        return
+
+    # Show balloons only when new file is loaded (compare file objects)
+    if (
+        "last_uploaded_file" not in st.session_state
+        or st.session_state.last_uploaded_file != uploaded_file
+    ):
+        st.session_state.last_uploaded_file = uploaded_file
+        st.balloons()
+        st.toast(f"✅ Successfully loaded {len(messages):,} messages!")
+
+    
 
     tab1, tab2, tab3 = st.tabs(
         [
             "📈 General Overview",
-            "🧑‍💻 Contact Insights", 
+            "🧑‍💻 Contact Insights",
             "👥 Group Insights",
         ]
     )

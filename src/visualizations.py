@@ -165,7 +165,7 @@ def render_general_overview(messages_df):
                 color_continuous_scale="viridis",
             )
             fig.update_layout(height=400, yaxis={"categoryorder": "total ascending"})
-            st.plotly_chart(fig, width='stretch')
+            st.plotly_chart(fig, width="stretch")
 
     with col2:
         st.subheader("📞 Calls Distribution")
@@ -185,7 +185,7 @@ def render_general_overview(messages_df):
             )
             fig.update_traces(textposition="inside", textinfo="percent+label")
             fig.update_layout(height=400)
-            st.plotly_chart(fig, width='stretch')
+            st.plotly_chart(fig, width="stretch")
 
     # Media and Call Analysis
     col1, col2 = st.columns(2)
@@ -232,7 +232,7 @@ def render_general_overview(messages_df):
                     },
                 )
                 fig.update_layout(height=400, xaxis_tickangle=45)
-                st.plotly_chart(fig, width='stretch')
+                st.plotly_chart(fig, width="stretch")
             else:
                 st.info("No video or voice messages found")
         else:
@@ -264,7 +264,7 @@ def render_general_overview(messages_df):
                     color_continuous_scale="Blues",
                 )
                 fig.update_layout(height=400, xaxis_tickangle=45)
-                st.plotly_chart(fig, width='stretch')
+                st.plotly_chart(fig, width="stretch")
             else:
                 st.info("No call duration data found")
         else:
@@ -328,7 +328,7 @@ def render_general_overview(messages_df):
         markers=True,
     )
     fig.update_layout(height=400, xaxis_tickangle=-45)
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, width="stretch")
 
     # Activity by hour of day
     col1, col2 = st.columns(2)
@@ -348,7 +348,7 @@ def render_general_overview(messages_df):
             color_continuous_scale="plasma",
         )
         fig.update_layout(height=350)
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, width="stretch")
 
     with col2:
         st.subheader("📅 Activity by Day of Week")
@@ -379,10 +379,10 @@ def render_general_overview(messages_df):
             color_continuous_scale="viridis",
         )
         fig.update_layout(height=350, xaxis_tickangle=-45)
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, width="stretch")
 
     # Activity Heatmap
-    st.plotly_chart(create_activity_heatmap(messages_df), width='stretch')
+    st.plotly_chart(create_activity_heatmap(messages_df), width="stretch")
 
     # Additional stats
     st.subheader("📝 Content Statistics")
@@ -459,11 +459,11 @@ def render_contact_analysis(messages_df):
 
     # Get unique combinations of chat name and ID to handle duplicate names
     chat_options = messages_df[["chat_name", "chat_id"]].drop_duplicates()
-    
+
     # Create display names that show both name and ID for disambiguation
     chat_display_options = []
     chat_lookup = {}
-    
+
     for _, row in chat_options.iterrows():
         chat_name = row["chat_name"]
         chat_id = row["chat_id"]
@@ -483,11 +483,11 @@ def render_contact_analysis(messages_df):
     if selected_display:
         # Get the actual chat name and ID from the selection
         selected_chat_name, selected_chat_id = chat_lookup[selected_display]
-        
+
         # Filter messages for the selected chat using both name and ID for accuracy
         chat_df = messages_df[
-            (messages_df["chat_name"] == selected_chat_name) & 
-            (messages_df["chat_id"] == selected_chat_id)
+            (messages_df["chat_name"] == selected_chat_name)
+            & (messages_df["chat_id"] == selected_chat_id)
         ]
 
         if chat_df.empty:
@@ -498,7 +498,11 @@ def render_contact_analysis(messages_df):
         total_messages = len(chat_df)
         total_calls = len(chat_df[chat_df["action"] == "phone_call"])
         calls_df = chat_df[chat_df["action"] == "phone_call"]
-        avg_call_duration = calls_df["duration_seconds"].mean() if len(calls_df) > 0 and "duration_seconds" in calls_df.columns else 0
+        avg_call_duration = (
+            calls_df["duration_seconds"].mean()
+            if len(calls_df) > 0 and "duration_seconds" in calls_df.columns
+            else 0
+        )
         total_media = chat_df["media_type"].notna().sum()
         voice_messages = len(chat_df[chat_df["media_type"] == "voice_message"])
         video_messages = len(chat_df[chat_df["media_type"] == "video_message"])
@@ -610,68 +614,88 @@ def render_contact_analysis(messages_df):
         chat_timeline = create_full_timeline(
             chat_df, full_start_date, full_end_date, selected_chat_name
         )
-        st.plotly_chart(chat_timeline, width='stretch')
+        st.plotly_chart(chat_timeline, width="stretch")
 
         # Participant Activity Distribution
-        has_message_participants = 'from' in chat_df.columns and not chat_df['from'].isna().all()
-        has_call_participants = 'actor' in chat_df.columns and not chat_df['actor'].isna().all()
-        
+        has_message_participants = (
+            "from" in chat_df.columns and not chat_df["from"].isna().all()
+        )
+        has_call_participants = (
+            "actor" in chat_df.columns and not chat_df["actor"].isna().all()
+        )
+
         if has_message_participants or has_call_participants:
             st.subheader("👥 Participant Activity Distribution")
-            
+
             col1, col2 = st.columns(2)
-            
+
             with col1:
                 # Calculate character counts per participant
                 if has_message_participants:
-                    participant_stats = chat_df[chat_df['from'].notna()].groupby('from').agg({
-                        'text_length': 'sum',
-                        'message_id': 'count'
-                    }).reset_index()
-                    
-                    participant_stats.columns = ['participant', 'total_characters', 'message_count']
-                    
+                    participant_stats = (
+                        chat_df[chat_df["from"].notna()]
+                        .groupby("from")
+                        .agg({"text_length": "sum", "message_id": "count"})
+                        .reset_index()
+                    )
+
+                    participant_stats.columns = [
+                        "participant",
+                        "total_characters",
+                        "message_count",
+                    ]
+
                     if not participant_stats.empty:
                         # Character distribution pie chart
                         fig_chars = px.pie(
                             participant_stats,
-                            values='total_characters',
-                            names='participant',
-                            title='Character Distribution by Participant',
-                            color_discrete_sequence=px.colors.qualitative.Set3
+                            values="total_characters",
+                            names="participant",
+                            title="Character Distribution by Participant",
+                            color_discrete_sequence=px.colors.qualitative.Set3,
                         )
-                        fig_chars.update_traces(textposition='inside', textinfo='percent+label')
+                        fig_chars.update_traces(
+                            textposition="inside", textinfo="percent+label"
+                        )
                         fig_chars.update_layout(height=400)
-                        st.plotly_chart(fig_chars, width='stretch')
+                        st.plotly_chart(fig_chars, width="stretch")
                     else:
                         st.info("No participant data available for messaging analysis")
                 else:
-                    st.info("No regular messages found - this chat only contains calls/service messages")
-            
+                    st.info(
+                        "No regular messages found - this chat only contains calls/service messages"
+                    )
+
             with col2:
                 # Call Patterns Analysis
                 if has_call_participants:
-                    call_data = chat_df[chat_df['action'] == 'phone_call']
-                    
+                    call_data = chat_df[chat_df["action"] == "phone_call"]
+
                     if not call_data.empty:
                         # Filter out null/empty values and calculate calls per participant
-                        valid_call_data = call_data[call_data['actor'].notna() & (call_data['actor'] != '')]
-                        
+                        valid_call_data = call_data[
+                            call_data["actor"].notna() & (call_data["actor"] != "")
+                        ]
+
                         if not valid_call_data.empty:
-                            call_stats = valid_call_data['actor'].value_counts().reset_index()
-                            call_stats.columns = ['participant', 'call_count']
-                            
+                            call_stats = (
+                                valid_call_data["actor"].value_counts().reset_index()
+                            )
+                            call_stats.columns = ["participant", "call_count"]
+
                             # Call distribution pie chart with consistent colors
                             fig_calls = px.pie(
                                 call_stats,
-                                values='call_count',
-                                names='participant',
-                                title='Call Initiation by Participant',
-                                color_discrete_sequence=px.colors.qualitative.Set3
+                                values="call_count",
+                                names="participant",
+                                title="Call Initiation by Participant",
+                                color_discrete_sequence=px.colors.qualitative.Set3,
                             )
-                            fig_calls.update_traces(textposition='inside', textinfo='percent+label')
+                            fig_calls.update_traces(
+                                textposition="inside", textinfo="percent+label"
+                            )
                             fig_calls.update_layout(height=400)
-                            st.plotly_chart(fig_calls, width='stretch')
+                            st.plotly_chart(fig_calls, width="stretch")
                         else:
                             st.info("All call records have unknown/empty initiators")
                     else:
@@ -679,7 +703,9 @@ def render_contact_analysis(messages_df):
                 else:
                     st.info("No call participants found in this conversation")
         else:
-            st.info("No participant information available for activity distribution analysis")
+            st.info(
+                "No participant information available for activity distribution analysis"
+            )
 
         # Content Analysis in two columns
         col1, col2 = st.columns(2)
@@ -703,7 +729,7 @@ def render_contact_analysis(messages_df):
                         textposition="inside", textinfo="percent+label"
                     )
                     fig_media.update_layout(height=400)
-                    st.plotly_chart(fig_media, width='stretch')
+                    st.plotly_chart(fig_media, width="stretch")
             else:
                 st.subheader("🎭 Media Content Analysis")
                 st.info("No media messages found in this conversation")
@@ -741,7 +767,7 @@ def render_contact_analysis(messages_df):
                     color_continuous_scale="blues",
                 )
                 fig_length.update_layout(height=400, xaxis_tickangle=45)
-                st.plotly_chart(fig_length, width='stretch')
+                st.plotly_chart(fig_length, width="stretch")
             else:
                 st.subheader("📝 Message Length Distribution")
                 st.info("No text length data available")
@@ -749,7 +775,7 @@ def render_contact_analysis(messages_df):
         # Activity heatmap
         st.subheader("⏰ Activity Heatmap")
         heatmap_fig = create_activity_heatmap(chat_df)
-        st.plotly_chart(heatmap_fig, width='stretch')
+        st.plotly_chart(heatmap_fig, width="stretch")
 
         # Word Cloud
         st.subheader("☁️ Word Cloud")
@@ -1084,32 +1110,38 @@ def render_group_insights(messages_df):
         return
 
     st.header("Group Insights")
-    
+
     # Filter for group chats only
-    group_messages = messages_df[messages_df["chat_type"] == "group"]
-    
+    group_messages = messages_df[messages_df["chat_type"] == "private_group"]
+
     if group_messages.empty:
         st.warning("No group chats found in your data.")
-        st.info("This analysis only works with group conversations (not private chats).")
+        st.info(
+            "This analysis only works with group conversations (not private chats)."
+        )
         return
-    
+
     # Basic group statistics
     total_groups = group_messages["chat_id"].nunique()
     total_group_messages = len(group_messages)
-    
+
     st.subheader("📊 Group Overview")
     col1, col2, col3 = st.columns(3)
-    
+
     with col1:
         st.metric("Total Groups", f"{total_groups:,}")
     with col2:
         st.metric("Group Messages", f"{total_group_messages:,}")
     with col3:
-        avg_msgs_per_group = total_group_messages / total_groups if total_groups > 0 else 0
+        avg_msgs_per_group = (
+            total_group_messages / total_groups if total_groups > 0 else 0
+        )
         st.metric("Avg Messages/Group", f"{avg_msgs_per_group:.0f}")
-    
-    st.info("🚧 Group Insights feature is under development! More analytics coming soon...")
-    
+
+    st.info(
+        "🚧 Group Insights feature is under development! More analytics coming soon..."
+    )
+
     # Show available groups for now
     st.subheader("📋 Your Groups")
     group_summary = (
@@ -1118,14 +1150,14 @@ def render_group_insights(messages_df):
         .reset_index(name="message_count")
         .sort_values("message_count", ascending=False)
     )
-    
+
     st.dataframe(
         group_summary,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "chat_name": "Group Name",
-            "chat_id": "Group ID", 
-            "message_count": st.column_config.NumberColumn("Messages", format="%d")
-        }
+            "chat_id": "Group ID",
+            "message_count": st.column_config.NumberColumn("Messages", format="%d"),
+        },
     )
