@@ -79,24 +79,15 @@ def get_chat_summary(messages_df: pd.DataFrame) -> Optional[pd.DataFrame]:
 
 
 # renders tab 1
-def render_general_overview(messages_df):
-    """Render the General Overview tab"""
+def render_general_overview(private_chats_df):
+    """Render the General Overview tab - receives pre-filtered private chat data"""
     st.header("General Overview of Private Chats")
 
-    if messages_df is None or messages_df.empty:
-        st.warning("No messages data available.")
-        return
-
-    # Filter to only private chats (personal_chat and saved_messages)
-    private_chats_df = messages_df[
-        messages_df["chat_type"].isin(["personal_chat", "saved_messages"])
-    ].copy()
-
-    if private_chats_df.empty:
+    if private_chats_df is None or private_chats_df.empty:
         st.warning("No private chat messages found.")
         return
 
-    # Get basic statistics
+    # Get basic statistics (no need to filter - already filtered)
     stats = get_basic_stats(private_chats_df)
     chat_summary = get_chat_summary(private_chats_df)
 
@@ -462,19 +453,10 @@ def render_general_overview(messages_df):
 
 
 # renders tab 2
-def render_contact_analysis(messages_df):
-    """Render the Contact Analysis tab with full timeline coverage"""
+def render_contact_analysis(private_chats_df):
+    """Render the Contact Analysis tab - receives pre-filtered private chat data"""
 
-    if messages_df is None or messages_df.empty:
-        st.warning("No messages data available.")
-        return
-
-    # Filter to only private chats (personal_chat and saved_messages)
-    private_chats_df = messages_df[
-        messages_df["chat_type"].isin(["personal_chat", "saved_messages"])
-    ].copy()
-
-    if private_chats_df.empty:
+    if private_chats_df is None or private_chats_df.empty:
         st.warning("No private chat messages found.")
         return
 
@@ -629,7 +611,7 @@ def render_contact_analysis(messages_df):
         # Create full timeline spanning entire Telegram usage period
         st.subheader("📅 Message Timeline")
 
-        # Get the full date range from all messages
+        # Get the full date range from all private messages
         full_start_date = private_chats_df["datetime"].min()
         full_end_date = private_chats_df["datetime"].max()
 
@@ -1126,19 +1108,10 @@ def create_word_cloud(chat_df, chat_name):
         st.error(f"Error generating word cloud: {str(e)}")
 
 
-def render_group_insights(messages_df):
-    """Render the Group Insights tab"""
+def render_group_insights(group_messages):
+    """Render the Group Insights tab - receives pre-filtered group chat data"""
 
-    if messages_df is None or messages_df.empty:
-        st.warning("No messages data available.")
-        return
-
-    # Filter for group chats only (include all group types)
-    group_messages = messages_df[
-        messages_df["chat_type"].isin(["private_group", "private_supergroup"])
-    ].copy()
-
-    if group_messages.empty:
+    if group_messages is None or group_messages.empty:
         st.warning("No group chats found in your data.")
         st.info(
             "This analysis only works with group conversations (not private chats)."

@@ -13,6 +13,14 @@ from src.visualizations import (
 )
 
 
+@st.cache_data
+def filter_messages_by_type(messages):
+    """Filter messages by chat type with caching for performance"""
+    private_messages = messages[messages["chat_type"].isin(["personal_chat", "saved_messages"])].copy()
+    group_messages = messages[messages["chat_type"].isin(["private_group", "private_supergroup"])].copy()
+    return private_messages, group_messages
+
+
 def setup_page():
     """Configure Streamlit page settings"""
     st.set_page_config(
@@ -80,6 +88,9 @@ def main():
         )
         return
 
+    # Filter messages by chat type once (cached for performance)
+    private_messages, group_messages = filter_messages_by_type(messages)
+
     # Show balloons only when new file is loaded (compare file objects)
     if (
         "last_uploaded_file" not in st.session_state
@@ -87,7 +98,11 @@ def main():
     ):
         st.session_state.last_uploaded_file = uploaded_file
         st.balloons()
-        st.toast(f"✅ Successfully loaded {len(messages):,} messages!")
+        
+        private_count = len(private_messages)
+        group_count = len(group_messages)
+        
+        st.toast(f"✅ Successfully loaded {len(messages):,} messages! ({private_count:,} private, {group_count:,} group)")
 
     tab1, tab2, tab3 = st.tabs(
         [
@@ -98,16 +113,16 @@ def main():
     )
 
     with tab1:
-        render_general_overview(messages)
+        render_general_overview(private_messages)
         if "initial_rerun_done" not in st.session_state:
             st.session_state.initial_rerun_done = True
             st.rerun()  # почему то без этого костыля(или это не костыль) после каждого рерана кидает в конец первого таба, взято с форума стримлита
 
     with tab2:
-        render_contact_analysis(messages)
+        render_contact_analysis(private_messages)
 
     with tab3:
-        render_group_insights(messages)
+        render_group_insights(group_messages)
 
 
 if __name__ == "__main__":
