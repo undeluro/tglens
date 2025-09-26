@@ -26,7 +26,7 @@ Your data never leaves your computer. Everything runs locally.
 1. Open **Telegram Desktop** (not mobile, not web version, not MacOS native). You need cross-platform Qt version.
 > **For macOS users**: You can install Telegram Desktop alongside the native version from the [official download page](https://desktop.telegram.org/)
 2. Go to Settings → Advanced (and scroll down) → Export Telegram data
-3. Choose **JSON** format and export your chats (we need only personal chats, so to speed up the process you may check only them)
+3. Choose **JSON** format and export your chats (we need personal chats + private chats(uncheck only my messages))
 4. Wait for the export to complete
 
 ### Step 2: Clone the repo
