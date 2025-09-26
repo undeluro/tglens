@@ -29,7 +29,7 @@ Your data never leaves your computer. Everything runs locally.
 2. Go to Settings → Advanced (scroll down) → Export Telegram data
 
 3. We need `Personal Chats` + `Private groups`(uncheck `Only my messages` there), so to speed up the process I recommend you check only them and uncheck media export. Then choose **JSON** format and export your chats.
-<img src="media/image.png" alt="export settings example" width="400">
+<img src="media/image.png" alt="export settings example" width="300">
 
 4. Wait for the export to complete
 
