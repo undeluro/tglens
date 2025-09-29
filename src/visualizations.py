@@ -786,6 +786,18 @@ def render_contact_analysis(private_chats_df):
         st.subheader("☁️ Word Cloud")
         create_word_cloud(chat_df, selected_chat_name)
 
+        # Recent Messages
+        st.subheader("💬 Recent Messages")
+
+        # Show last 20 messages as DataFrame
+        recent_messages = chat_df.sort_values("datetime", ascending=False).head(20)
+
+        if not recent_messages.empty:
+            # Display all columns
+            st.dataframe(recent_messages, width="stretch", hide_index=True)
+        else:
+            st.info("No messages found in this chat")
+
 
 def create_full_timeline(chat_df, start_date, end_date, chat_name):
     """Create a timeline chart that spans the full Telegram usage period"""
@@ -1343,3 +1355,14 @@ def render_group_insights(group_chats_df):
         # Word Cloud
         st.subheader("☁️ Word Cloud")
         create_word_cloud(chat_df, selected_chat_name)
+
+        # Recent Messages
+        st.subheader("💬 Recent Messages")
+
+        # Show last 20 messages as DataFrame
+        recent_messages = chat_df.sort_values("datetime", ascending=False).head(20)
+
+        if not recent_messages.empty:
+            st.dataframe(recent_messages, width="stretch", hide_index=True)
+        else:
+            st.info("No messages found in this group")
