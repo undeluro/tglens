@@ -18,9 +18,9 @@ Gain insights into your Telegram chats and uncover trends in your messaging beha
 Your data never leaves your computer. Everything runs locally.
 
 ### Step 0: Prerequisites
-- **Python 3.13+** 
 - **Git** 
 - **uv** - Python package manager ([install here](https://docs.astral.sh/uv/getting-started/installation/))
+- **Python 3.13+** (uv will install if not found)
 
 ### Step 1: Get your data
 1. Open **Telegram Desktop** (not mobile, not web version, not MacOS native). You need cross-platform Qt version.
@@ -31,7 +31,7 @@ Your data never leaves your computer. Everything runs locally.
 3. We need `Personal Chats` + `Private groups`(uncheck `Only my messages` there), so to speed up the process I recommend you check only them and uncheck media export. Then choose **JSON** format and export your chats.
 <img src="media/image.png" alt="export settings example" width="300">
 
-4. Wait for the export to complete
+4. Wait for the export to complete.
 
 ### Step 2: Clone the repo
 ```bash
