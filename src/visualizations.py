@@ -1108,10 +1108,10 @@ def create_word_cloud(chat_df, chat_name):
         st.error(f"Error generating word cloud: {str(e)}")
 
 
-def render_group_insights(group_messages):
+def render_group_insights(group_chats_df):
     """Render the Group Insights tab - receives pre-filtered group chat data"""
 
-    if group_messages is None or group_messages.empty:
+    if group_chats_df is None or group_chats_df.empty:
         st.warning("No group chats found in your data.")
         st.info(
             "This analysis only works with group conversations (not private chats)."
@@ -1121,7 +1121,7 @@ def render_group_insights(group_messages):
     st.header("Group Insights")
 
     # Get unique combinations of chat name and ID to handle duplicate names
-    chat_options = group_messages[["chat_name", "chat_id"]].drop_duplicates()
+    chat_options = group_chats_df[["chat_name", "chat_id"]].drop_duplicates()
 
     # Create display names that show both name and ID for disambiguation
     chat_display_options = []
@@ -1148,9 +1148,9 @@ def render_group_insights(group_messages):
         selected_chat_name, selected_chat_id = chat_lookup[selected_display]
 
         # Filter messages for the selected group using both name and ID for accuracy
-        chat_df = group_messages[
-            (group_messages["chat_name"] == selected_chat_name)
-            & (group_messages["chat_id"] == selected_chat_id)
+        chat_df = group_chats_df[
+            (group_chats_df["chat_name"] == selected_chat_name)
+            & (group_chats_df["chat_id"] == selected_chat_id)
         ]
 
         if chat_df.empty:
@@ -1234,12 +1234,12 @@ def render_group_insights(group_messages):
                     daily_activity.idxmax() if not daily_activity.empty else "Unknown"
                 )
                 st.metric(
-                    label="📆 Most Active Day",
+                    label="📅 Most Active Day",
                     value=most_active_day,
                     help="Day of week with most messages",
                 )
             else:
-                st.metric(label="📆 Most Active Day", value="N/A")
+                st.metric(label="📅 Most Active Day", value="N/A")
 
         with col4:
             # Average message length
@@ -1270,8 +1270,8 @@ def render_group_insights(group_messages):
         st.subheader("📅 Message Timeline")
 
         # Get the full date range from chat messages
-        full_start_date = chat_df["datetime"].min()
-        full_end_date = chat_df["datetime"].max()
+        full_start_date = group_chats_df["datetime"].min()
+        full_end_date = group_chats_df["datetime"].max()
 
         # Create timeline with full date range
         group_timeline = create_full_timeline(
