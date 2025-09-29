@@ -13,14 +13,6 @@ from src.visualizations import (
 )
 
 
-@st.cache_data
-def filter_messages_by_type(messages):
-    """Filter messages by chat type with caching for performance"""
-    private_messages = messages[messages["chat_type"].isin(["personal_chat", "saved_messages"])].copy()
-    group_messages = messages[messages["chat_type"].isin(["private_group", "private_supergroup"])].copy()
-    return private_messages, group_messages
-
-
 def setup_page():
     """Configure Streamlit page settings"""
     st.set_page_config(
@@ -88,8 +80,12 @@ def main():
         )
         return
 
-    # Filter messages by chat type once (cached for performance)
-    private_messages, group_messages = filter_messages_by_type(messages)
+    private_messages = messages[
+        messages["chat_type"].isin(["personal_chat", "saved_messages"])
+    ].copy()
+    group_messages = messages[
+        messages["chat_type"].isin(["private_group", "private_supergroup"])
+    ].copy()
 
     # Show balloons only when new file is loaded (compare file objects)
     if (
@@ -98,11 +94,13 @@ def main():
     ):
         st.session_state.last_uploaded_file = uploaded_file
         st.balloons()
-        
+
         private_count = len(private_messages)
         group_count = len(group_messages)
-        
-        st.toast(f"✅ Successfully loaded {len(messages):,} messages! ({private_count:,} private, {group_count:,} group)")
+
+        st.toast(
+            f"✅ Successfully loaded {len(messages):,} messages! ({private_count:,} private, {group_count:,} group)"
+        )
 
     tab1, tab2, tab3 = st.tabs(
         [
