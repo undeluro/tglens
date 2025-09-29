@@ -1171,7 +1171,7 @@ def render_group_insights(group_chats_df):
 
         # Basic stats for the group
         total_messages = len(chat_df)
-        calls_df = chat_df[chat_df["action"] == "phone_call"]
+        calls_df = chat_df[chat_df["action"] == "group_call"]
         total_calls = len(calls_df)
         avg_call_duration = (
             calls_df["duration_seconds"].mean()
