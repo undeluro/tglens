@@ -1304,19 +1304,18 @@ def render_group_insights(group_chats_df):
             if has_message_participants:
                 message_stats = (
                     chat_df[chat_df["from"].notna()]
-                    .groupby("from")
-                    .size()
-                    .reset_index(name="message_count")
-                    .sort_values("message_count", ascending=False)
-                    .head(10)
+                    .groupby("from")["text_length"]
+                    .sum()
+                    .reset_index(name="character_count")
+                    .sort_values("character_count", ascending=False)
                 )
 
                 if not message_stats.empty:
                     fig = px.pie(
                         message_stats,
-                        values="message_count",
+                        values="character_count",
                         names="from",
-                        title="Participant Activity (by Messages)",
+                        title="Participant Activity (by characters)",
                         color_discrete_sequence=px.colors.qualitative.Set3,
                     )
                     fig.update_traces(textposition="inside", textinfo="percent+label")
