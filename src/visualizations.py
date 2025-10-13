@@ -428,31 +428,11 @@ def render_general_overview(private_chats_df):
         )
         display_df["last_message"] = display_df["last_message"].dt.strftime("%Y-%m-%d")
 
-        st.dataframe(
-            display_df,
-            width="stretch",
-            hide_index=True,
-            column_config={
-                "chat_name": "Chat Name",
-                "chat_type": "Type",
-                "message_count": st.column_config.NumberColumn("Messages", format="%d"),
-                "unique_senders": st.column_config.NumberColumn("Users", format="%d"),
-                "avg_text_length": st.column_config.NumberColumn(
-                    "Avg Length", format="%.1f"
-                ),
-                "messages_per_day": st.column_config.NumberColumn(
-                    "Msgs/Day", format="%.2f"
-                ),
-                "first_message": "First Message",
-                "last_message": "Last Message",
-                "days_active": st.column_config.NumberColumn(
-                    "Days Active", format="%d"
-                ),
-            },
-        )
+        st.dataframe(display_df)
 
 
 # renders tab 2
+@st.fragment()
 def render_contact_analysis(private_chats_df):
     """Render the Contact Analysis tab - receives pre-filtered private chat data"""
 
@@ -794,7 +774,7 @@ def render_contact_analysis(private_chats_df):
 
         if not recent_messages.empty:
             # Display all columns
-            st.dataframe(recent_messages, width="stretch", hide_index=True)
+            st.dataframe(recent_messages)
         else:
             st.info("No messages found in this chat")
 
@@ -1120,6 +1100,8 @@ def create_word_cloud(chat_df, chat_name):
         st.error(f"Error generating word cloud: {str(e)}")
 
 
+# renders tab 3
+@st.fragment()
 def render_group_insights(group_chats_df):
     """Render the Group Insights tab - receives pre-filtered group chat data"""
 
@@ -1362,6 +1344,6 @@ def render_group_insights(group_chats_df):
         recent_messages = chat_df.sort_values("datetime", ascending=False).head(20)
 
         if not recent_messages.empty:
-            st.dataframe(recent_messages, width="stretch", hide_index=True)
+            st.dataframe(recent_messages)
         else:
             st.info("No messages found in this group")
