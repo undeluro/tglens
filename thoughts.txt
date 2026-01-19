@@ -62,10 +62,13 @@ general tab:
 - weekday/hour heatmap
 - other statistic
 
-
-
 - message cnts
 - calls(and directions)
 - calls duration
 - kruzochkki cnt , how tho (ez -> "media_type": "video_message",)(directions)
 - audio msg cnt. avg audio message duration ("media_type": "voice_message",)(directions)
+
+RAG Section
+ask questions
+retrieve info from your inbox
+text only for now
