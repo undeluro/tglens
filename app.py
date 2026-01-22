@@ -112,11 +112,7 @@ def main():
 
     with tab1:
         render_general_overview(private_messages)
-        # maybe this should be deleted
-        if "initial_rerun_done" not in st.session_state:
-            st.session_state.initial_rerun_done = True
-            st.rerun()  # почему то без этого костыля(или это не костыль) после каждого рерана кидает в конец первого таба, взято с форума стримлита
-
+        
     with tab2:
         render_contact_analysis(private_messages)
 
