@@ -15,18 +15,22 @@ from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_ollama import ChatOllama
+from langchain_ollama import ChatOllama, OllamaEmbeddings
 
 # ── Model options ────────────────────────────────────────────────────────
 
 EMBEDDING_MODELS = {
-    "multilingual-e5-small (recommended)": "intfloat/multilingual-e5-small",
+    "EmbeddingGemma 300M (recommended)": "ollama:embeddinggemma",
+    "multilingual-e5-small": "intfloat/multilingual-e5-small",
     "multilingual-e5-base (higher quality)": "intfloat/multilingual-e5-base",
     "all-MiniLM-L6-v2 (English only, fastest)": "sentence-transformers/all-MiniLM-L6-v2",
 }
 
 LLM_MODELS = {
-    "Qwen 2.5 7B (recommended)": "qwen2.5:7b-instruct",
+    "Gemma 3 12B (recommended)": "gemma3:12b",
+    "Gemma 3 4B (lightweight)": "gemma3:4b",
+    "Gemma 3 1B (ultra-light)": "gemma3:1b",
+    "Qwen 2.5 7B": "qwen2.5:7b-instruct",
     "Qwen 2.5 14B (needs 32 GB RAM)": "qwen2.5:14b-instruct",
     "Qwen 2.5 3B (lightweight)": "qwen2.5:3b-instruct",
 }
@@ -45,7 +49,7 @@ META_FILE = PERSIST_DIR / "meta.json"
 
 # ── System prompt ────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """You are an assistant that answers questions about a user's Telegram inbox.
+SYSTEM_PROMPT = """You are a friendly helpful assistant that answers questions about a user's Telegram inbox. You are allowed to be playful and answer with humor.
 
 Rules:
 - Answer based ONLY on the provided chat excerpts.
@@ -53,16 +57,40 @@ Rules:
 - Be concise. Cite chat names, dates, and people when relevant.
 - When quoting messages, use the exact text from the excerpts.
 - The user's name is "{user_name}". Refer to them as "you" when describing their messages.
-- Answer in the same language the user asks their question in."""
+- Answer in the same language the user asks their question in.
+
+Give detailed answers and use your deductive reasoning skills to connect the dots between different messages and chats. The more insights you can provide, the better!"""
 
 # ── Example questions for greeting ───────────────────────────────────────
 
-EXAMPLE_QUESTIONS = [
-    "Who do I message the most?",
-    "What did we talk about last week?",
-    "Find messages about travel plans",
-    "Summarize my recent conversations",
+_EXAMPLE_TEMPLATES = [
+    "What restaurants or cafes did {name} recommend?",
+    "Did {name} and I talk about any movies or books?",
+    "What is {name}'s favorite computer game?",
+    "Did {name} ever mention moving to another city?",
 ]
+
+
+def _build_example_questions(df: pd.DataFrame) -> list[str]:
+    """Generate example questions using real contact names from private chats."""
+    private = df[df["chat_type"] == "personal_chat"]
+    if private.empty:
+        return [t.format(name="anyone") for t in _EXAMPLE_TEMPLATES]
+
+    top_chats = (
+        private.groupby("chat_name")
+        .size()
+        .sort_values(ascending=False)
+        .head(len(_EXAMPLE_TEMPLATES))
+        .index.tolist()
+    )
+
+    questions: list[str] = []
+    for i, template in enumerate(_EXAMPLE_TEMPLATES):
+        name = top_chats[i % len(top_chats)]
+        short_name = name.split()[0] if name else name
+        questions.append(template.format(name=short_name))
+    return questions
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -99,13 +127,23 @@ def _estimate_tokens(text: str) -> int:
 @st.cache_resource
 def _get_embeddings(model_id: str):
     """Load and cache the embedding model (persists across reruns)."""
+    if model_id.startswith("ollama:"):
+        return OllamaEmbeddings(model=model_id.removeprefix("ollama:"))
     if model_id.startswith("intfloat/"):
         return _E5Embeddings(model_name=model_id)
     return HuggingFaceEmbeddings(model_name=model_id)
 
 
 def _detect_user(df: pd.DataFrame) -> str:
-    """Heuristic: the most frequent sender across private chats is the user."""
+    """Detect the user's name from Saved Messages, falling back to frequency heuristic."""
+    # Primary: sender name in Saved Messages is always the account owner
+    saved = df[df["chat_type"] == "saved_messages"]
+    if not saved.empty:
+        senders = saved["from"].dropna().value_counts()
+        if not senders.empty:
+            return senders.index[0]
+
+    # Fallback: most frequent sender across private chats
     private = df[df["chat_type"] == "personal_chat"]
     if private.empty:
         private = df
@@ -384,7 +422,7 @@ def query_rag(
     llm = ChatOllama(model=llm_model, temperature=0.3)
     messages = [
         SystemMessage(content=SYSTEM_PROMPT.format(user_name=user_name)),
-        HumanMessage(content=f"Chat excerpts:\n\n{context}\n\n---\nQuestion: {query}"),
+        HumanMessage(content=f"Chat excerpts (what was retrieved from the vector db):\n\n{context}\n\n---\nQuestion: {query}"),
     ]
 
     response = llm.invoke(messages)
@@ -408,18 +446,16 @@ def render_rag_page(messages_df: pd.DataFrame) -> None:
     user_name = _detect_user(messages_df)
     df_hash = _get_df_hash(messages_df)
 
-    # ── Settings ─────────────────────────────────────────────────────────
+    # ── Settings (sidebar) ───────────────────────────────────────────────
 
-    with st.expander("⚙️ Settings"):
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
+    with st.sidebar:
+        with st.expander("⚙️ RAG Settings", expanded=False):
             embedding_choice = st.selectbox(
                 "Embedding model",
                 options=list(EMBEDDING_MODELS.keys()),
                 index=0,
                 help="Multilingual E5 models support English and Russian well.",
             )
-        with col_m2:
             llm_choice = st.selectbox(
                 "LLM model (Ollama)",
                 options=list(LLM_MODELS.keys()),
@@ -427,43 +463,39 @@ def render_rag_page(messages_df: pd.DataFrame) -> None:
                 help="Make sure you've pulled the model: `ollama pull <model>`",
             )
 
-        embedding_model_id = EMBEDDING_MODELS[embedding_choice]
-        llm_model_id = LLM_MODELS[llm_choice]
+            embedding_model_id = EMBEDDING_MODELS[embedding_choice]
+            llm_model_id = LLM_MODELS[llm_choice]
 
-        # Chat selection
-        chat_info = (
-            messages_df.groupby(["chat_id", "chat_name", "chat_type"])
-            .size()
-            .reset_index(name="count")
-            .sort_values("count", ascending=False)
-        )
-        chat_options = {
-            f"{row['chat_name']}  ·  {row['chat_type']}  ·  {row['count']:,} msgs": row[
-                "chat_id"
-            ]
-            for _, row in chat_info.iterrows()
-        }
-        selected_labels = st.multiselect(
-            "Chats to index",
-            options=list(chat_options.keys()),
-            default=list(chat_options.keys()),
-            help="Select which chats to include in the search index.",
-        )
-        selected_chat_ids = {chat_options[label] for label in selected_labels}
+            # Chat selection
+            chat_info = (
+                messages_df.groupby(["chat_id", "chat_name", "chat_type"])
+                .size()
+                .reset_index(name="count")
+                .sort_values("count", ascending=False)
+            )
+            chat_options = {
+                f"{row['chat_name']}  ·  {row['chat_type']}  ·  {row['count']:,} msgs": row[
+                    "chat_id"
+                ]
+                for _, row in chat_info.iterrows()
+            }
+            selected_labels = st.multiselect(
+                "Chats to index",
+                options=list(chat_options.keys()),
+                default=list(chat_options.keys()),
+                help="Select which chats to include in the search index.",
+            )
+            selected_chat_ids = {chat_options[label] for label in selected_labels}
 
-        st.divider()
+            st.divider()
 
-        # Action buttons
-        col_a, col_b, col_c = st.columns(3)
-        with col_a:
+            # Action buttons
             build_clicked = st.button(
                 "Build Index", type="primary", icon="🔨", use_container_width=True
             )
-        with col_b:
             rebuild_clicked = st.button(
                 "Rebuild Index", icon="🔄", use_container_width=True
             )
-        with col_c:
             clear_clicked = st.button("Clear Chat", icon="🗑️", use_container_width=True)
 
     # ── Handle button actions ────────────────────────────────────────────
@@ -536,8 +568,8 @@ def render_rag_page(messages_df: pd.DataFrame) -> None:
 
     if vector_store is None:
         st.info(
-            "Open **⚙️ Settings** above to select chats and **Build Index** "
-            "before you can start chatting."
+            "Open **⚙️ RAG Settings** in the sidebar to select chats and "
+            "**Build Index** before you can start chatting."
         )
         return
 
@@ -558,6 +590,8 @@ def render_rag_page(messages_df: pd.DataFrame) -> None:
     # ── Greeting (shown only when chat history is empty) ─────────────────
 
     if not st.session_state.rag_chat_history and pending_query is None:
+        examples = _build_example_questions(messages_df)
+
         with st.chat_message("assistant"):
             st.markdown(
                 "Hi! I've indexed your chats and I'm ready to answer questions.\n\n"
@@ -565,7 +599,7 @@ def render_rag_page(messages_df: pd.DataFrame) -> None:
             )
 
         cols = st.columns(2, gap="small")
-        for i, example in enumerate(EXAMPLE_QUESTIONS):
+        for i, example in enumerate(examples):
             with cols[i % 2]:
                 if st.button(
                     example,
