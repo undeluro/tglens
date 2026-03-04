@@ -333,6 +333,17 @@ def _chunk_messages(df: pd.DataFrame, selected_chat_ids: set) -> list[Document]:
 # ═════════════════════════════════════════════════════════════════════════
 
 
+def _close_vector_store() -> None:
+    """Release the ChromaDB client so SQLite connections are closed."""
+    vs = st.session_state.pop("rag_vector_store", None)
+    if vs is not None:
+        try:
+            vs._client._system.stop()
+            vs._client.clear_system_cache()
+        except Exception:
+            pass
+
+
 def build_vector_store(
     df: pd.DataFrame,
     selected_chat_ids: set,
@@ -346,7 +357,8 @@ def build_vector_store(
 
     embeddings = _get_embeddings(embedding_model_id)
 
-    # Wipe old index
+    # Close any existing client before wiping the directory
+    _close_vector_store()
     if PERSIST_DIR.exists():
         shutil.rmtree(PERSIST_DIR)
 
@@ -455,7 +467,7 @@ def render_rag_page(messages_df: pd.DataFrame) -> None:
     # ── Settings (sidebar) ───────────────────────────────────────────────
 
     with st.sidebar:
-        with st.expander("⚙️ RAG Settings", expanded=False):
+        with st.expander("⚙️ RAG Settings"):
             embedding_choice = st.selectbox(
                 "Embedding model",
                 options=list(EMBEDDING_MODELS.keys()),
@@ -511,7 +523,8 @@ def render_rag_page(messages_df: pd.DataFrame) -> None:
         st.rerun()
 
     if rebuild_clicked:
-        for key in ("rag_vector_store", "rag_df_hash", "rag_embedding_model"):
+        _close_vector_store()
+        for key in ("rag_df_hash", "rag_embedding_model"):
             st.session_state.pop(key, None)
         if PERSIST_DIR.exists():
             shutil.rmtree(PERSIST_DIR)
