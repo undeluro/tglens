@@ -72,3 +72,7 @@ RAG Section
 ask questions
 retrieve info from your inbox
 text only for now
+
+should it be per chat ? not for whole inbox since it's too huge
+
+will be optional
