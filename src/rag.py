@@ -398,35 +398,41 @@ def _load_existing_store(embedding_model_id: str) -> Chroma | None:
 # ═════════════════════════════════════════════════════════════════════════
 
 
-def query_rag(
+def retrieve_context(
     vector_store: Chroma,
     query: str,
-    user_name: str,
-    llm_model: str,
     chat_filter: str | None = None,
     k: int = 8,
-) -> tuple[str, list[Document]]:
-    """Run a single-turn RAG query with optional chat-name filtering."""
+) -> list[Document]:
+    """Retrieve relevant document chunks for a query."""
     search_kwargs: dict = {"k": k}
     if chat_filter:
         search_kwargs["filter"] = {"chat_name": chat_filter}
 
     retriever = vector_store.as_retriever(search_kwargs=search_kwargs)
-    docs = retriever.invoke(query)
+    return retriever.invoke(query)
 
-    if not docs:
-        return "No relevant messages found for your query.", []
 
+def stream_answer(
+    docs: list[Document],
+    query: str,
+    user_name: str,
+    llm_model: str,
+):
+    """Yield streamed token chunks from the LLM."""
     context = "\n\n---\n\n".join(doc.page_content for doc in docs)
 
     llm = ChatOllama(model=llm_model, temperature=0.3)
     messages = [
         SystemMessage(content=SYSTEM_PROMPT.format(user_name=user_name)),
-        HumanMessage(content=f"Chat excerpts (what was retrieved from the vector db):\n\n{context}\n\n---\nQuestion: {query}"),
+        HumanMessage(
+            content=f"Chat excerpts (context retrieved from the vector store):\n\n{context}\n\n---\nMy question is: {query}"
+        ),
     ]
 
-    response = llm.invoke(messages)
-    return response.content, docs
+    for chunk in llm.stream(messages):
+        if chunk.content:
+            yield chunk.content
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -655,25 +661,29 @@ def render_rag_page(messages_df: pd.DataFrame) -> None:
                     {"role": "assistant", "content": err}
                 )
             else:
-                with st.spinner("Searching & thinking…"):
-                    try:
-                        answer, sources = query_rag(
-                            vector_store,
-                            query,
-                            user_name,
-                            llm_model_id,
+                try:
+                    with st.spinner("Searching…"):
+                        sources = retrieve_context(vector_store, query)
+
+                    if not sources:
+                        msg = "No relevant messages found for your query."
+                        st.markdown(msg)
+                        st.session_state.rag_chat_history.append(
+                            {"role": "assistant", "content": msg}
                         )
-                        st.markdown(answer)
-                        if sources:
-                            with st.expander("📄 Sources"):
-                                for doc in sources:
-                                    m = doc.metadata
-                                    st.caption(
-                                        f"**{m.get('chat_name')}** · "
-                                        f"{m.get('date_start')} · "
-                                        f"{m.get('message_count')} messages"
-                                    )
-                                    st.code(doc.page_content[:500], language=None)
+                    else:
+                        answer = st.write_stream(
+                            stream_answer(sources, query, user_name, llm_model_id)
+                        )
+                        with st.expander("📄 Sources"):
+                            for doc in sources:
+                                m = doc.metadata
+                                st.caption(
+                                    f"**{m.get('chat_name')}** · "
+                                    f"{m.get('date_start')} · "
+                                    f"{m.get('message_count')} messages"
+                                )
+                                st.code(doc.page_content[:500], language=None)
                         st.session_state.rag_chat_history.append(
                             {
                                 "role": "assistant",
@@ -681,9 +691,9 @@ def render_rag_page(messages_df: pd.DataFrame) -> None:
                                 "sources": sources,
                             }
                         )
-                    except Exception as e:
-                        err = f"Error: {e}"
-                        st.error(err)
-                        st.session_state.rag_chat_history.append(
-                            {"role": "assistant", "content": err}
-                        )
+                except Exception as e:
+                    err = f"Error: {e}"
+                    st.error(err)
+                    st.session_state.rag_chat_history.append(
+                        {"role": "assistant", "content": err}
+                    )
