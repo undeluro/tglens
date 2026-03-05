@@ -20,19 +20,26 @@ from langchain_ollama import ChatOllama, OllamaEmbeddings
 # ── Model options ────────────────────────────────────────────────────────
 
 EMBEDDING_MODELS = {
-    "EmbeddingGemma 300M (recommended)": "ollama:embeddinggemma",
-    "multilingual-e5-small": "intfloat/multilingual-e5-small",
-    "multilingual-e5-base (higher quality)": "intfloat/multilingual-e5-base",
-    "all-MiniLM-L6-v2 (English only, fastest)": "sentence-transformers/all-MiniLM-L6-v2",
+    # ── Ollama (requires `ollama pull <model>`) ──
+    "Qwen3 Embedding 0.6B · MTEB #1 (recommended)": "ollama:qwen3-embedding:0.6b",
+    "BGE-M3 567M · proven multilingual": "ollama:bge-m3",
+    "EmbeddingGemma 300M · lightweight": "ollama:embeddinggemma",
+    "Nomic Embed v2 MoE · fast multilingual": "ollama:nomic-embed-text-v2-moe",
+    # ── HuggingFace (no Ollama needed, downloaded once) ──
+    "multilingual-e5-small · no Ollama needed": "intfloat/multilingual-e5-small",
+    "multilingual-e5-base · higher quality": "intfloat/multilingual-e5-base",
 }
 
 LLM_MODELS = {
-    "Gemma 3 12B (recommended)": "gemma3:12b",
-    "Gemma 3 4B (lightweight)": "gemma3:4b",
-    "Gemma 3 1B (ultra-light)": "gemma3:1b",
-    "Qwen 2.5 7B": "qwen2.5:7b-instruct",
-    "Qwen 2.5 14B (needs 32 GB RAM)": "qwen2.5:14b-instruct",
-    "Qwen 2.5 3B (lightweight)": "qwen2.5:3b-instruct",
+    # ── Qwen (best multilingual, incl. Russian) ──
+    "Qwen 3.5 9B · latest, 256K ctx (recommended)": "qwen3.5:9b",
+    "Qwen 3.5 4B · lightweight, 256K ctx": "qwen3.5:4b",
+    "Qwen 3 8B · thinking mode": "qwen3:8b",
+    "Qwen 3 4B · tiny, 256K ctx": "qwen3:4b",
+    # ── Gemma (Google) ──
+    "Gemma 3 12B · 128K ctx": "gemma3:12b",
+    "Gemma 3 4B · lightweight": "gemma3:4b",
+    "Gemma 3 1B · ultra-light": "gemma3:1b",
 }
 
 # ── Chunking parameters ─────────────────────────────────────────────────
