@@ -5,19 +5,17 @@ A Streamlit app for analyzing Telegram dumps
 
 import streamlit as st
 
-from src.data_loader import load_into_df
-from src.visualizations import (
-    render_general_overview,
-    render_contact_analysis,
-    render_group_insights,
-)
-
-
 # ── Page functions ───────────────────────────────────────────────────────
 
 
 def analytics_page():
     """Analytics page — overview, contact insights, and group insights."""
+    from src.visualizations import (
+        render_general_overview,
+        render_contact_analysis,
+        render_group_insights,
+    )
+
     messages = st.session_state.get("messages_df")
 
     if messages is None:
@@ -117,6 +115,8 @@ pg = st.navigation(
 # ── Sidebar: file upload ─────────────────────────────────────────────────
 
 with st.sidebar:
+    from src.data_loader import load_into_df
+
     uploaded_file = st.file_uploader(
         "📁 Choose your Telegram JSON export file",
         type="json",

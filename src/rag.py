@@ -4,10 +4,14 @@ Enables querying chat histories using natural language.
 Runs fully locally: sentence-transformers for embeddings, Ollama for LLM.
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
 import shutil
+import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pandas as pd
 import streamlit as st
@@ -16,6 +20,9 @@ from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_ollama import ChatOllama, OllamaEmbeddings
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 # ── Model options ────────────────────────────────────────────────────────
 
@@ -31,23 +38,27 @@ EMBEDDING_MODELS = {
 }
 
 LLM_MODELS = {
-    # ── Qwen (best multilingual, incl. Russian) ──
     "Qwen 3.5 9B · latest, 256K ctx (recommended)": "qwen3.5:9b",
     "Qwen 3.5 4B · lightweight, 256K ctx": "qwen3.5:4b",
     "Qwen 3 8B · thinking mode": "qwen3:8b",
     "Qwen 3 4B · tiny, 256K ctx": "qwen3:4b",
-    # ── Gemma (Google) ──
     "Gemma 3 12B · 128K ctx": "gemma3:12b",
     "Gemma 3 4B · lightweight": "gemma3:4b",
     "Gemma 3 1B · ultra-light": "gemma3:1b",
 }
+
+# ── Retrieval parameters ─────────────────────────────────────────────────
+
+RETRIEVAL_K = 12  # fetch more candidates for MMR
+RETRIEVAL_FINAL_K = 6  # return after diversity filtering
+MMR_LAMBDA = 0.7  # balance relevance (1.0) vs diversity (0.0)
 
 # ── Chunking parameters ─────────────────────────────────────────────────
 
 GAP_MINUTES = 120  # silence gap that splits conversations
 MAX_CHUNK_TOKENS = 400
 MAX_CHUNK_MESSAGES = 50
-OVERLAP_TOKENS = 40
+OVERLAP_MESSAGES = 3  # message-level overlap for context continuity
 
 # ── Persistence ──────────────────────────────────────────────────────────
 
@@ -58,55 +69,25 @@ META_FILE = PERSIST_DIR / "meta.json"
 
 SYSTEM_PROMPT = """You are a friendly helpful assistant that answers questions about a user's Telegram inbox. You are allowed to be playful and answer with humor.
 
+You will receive excerpts from real chat conversations retrieved by semantic \
+search. Use ONLY the provided excerpts to answer. If the excerpts do not \
+contain enough information, say so honestly — do not invent messages or facts.
+
 Rules:
-- Answer based ONLY on the provided chat excerpts.
-- If the excerpts don't contain enough information, say so honestly.
 - Be concise. Cite chat names, dates, and people when relevant.
-- When quoting messages, use the exact text from the excerpts.
 - The user's name is "{user_name}". Refer to them as "you" when describing their messages.
 - Answer in the same language the user asks their question in.
 
 Give detailed answers and use your deductive reasoning skills to connect the dots between different messages and chats. The more insights you can provide, the better!"""
 
-# ── Example questions for greeting ───────────────────────────────────────
 
-_EXAMPLE_TEMPLATES = [
-    "What restaurants or cafes did {name} recommend?",
-    "Did {name} and I talk about any movies or books?",
-    "What is {name}'s favorite computer game?",
-    "Did {name} ever mention moving to another city?",
-]
-
-
-def _build_example_questions(df: pd.DataFrame) -> list[str]:
-    """Generate example questions using real contact names from private chats."""
-    private = df[df["chat_type"] == "personal_chat"]
-    if private.empty:
-        return [t.format(name="anyone") for t in _EXAMPLE_TEMPLATES]
-
-    top_chats = (
-        private.groupby("chat_name")
-        .size()
-        .sort_values(ascending=False)
-        .head(len(_EXAMPLE_TEMPLATES))
-        .index.tolist()
-    )
-
-    questions: list[str] = []
-    for i, template in enumerate(_EXAMPLE_TEMPLATES):
-        name = top_chats[i % len(top_chats)]
-        short_name = name.split()[0] if name else name
-        questions.append(template.format(name=short_name))
-    return questions
-
-
-# ═════════════════════════════════════════════════════════════════════════
-# E5 Embedding wrapper
-# ═════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════
+# Embeddings helpers
+# ═══════════════════════════════════════════════════════════════════════════
 
 
 class _E5Embeddings(HuggingFaceEmbeddings):
-    """HuggingFaceEmbeddings wrapper that adds E5 query/passage prefixes."""
+    """Wrapper that adds E5 query/passage prefixes for better retrieval."""
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return super().embed_documents([f"passage: {t}" for t in texts])
@@ -115,47 +96,426 @@ class _E5Embeddings(HuggingFaceEmbeddings):
         return super().embed_query(f"query: {text}")
 
 
-# ═════════════════════════════════════════════════════════════════════════
-# Helpers
-# ═════════════════════════════════════════════════════════════════════════
+@st.cache_resource
+def _get_embeddings(model_id: str):
+    """Return an embeddings instance for the given model identifier."""
+    if model_id.startswith("ollama:"):
+        ollama_model = model_id[len("ollama:") :]
+        return OllamaEmbeddings(model=ollama_model)
+
+    import torch
+
+    device = "mps" if torch.backends.mps.is_available() else "cpu"
+
+    if "e5" in model_id.lower():
+        return _E5Embeddings(
+            model_name=model_id,
+            model_kwargs={"device": device},
+            encode_kwargs={"normalize_embeddings": True},
+        )
+    return HuggingFaceEmbeddings(
+        model_name=model_id,
+        model_kwargs={"device": device},
+        encode_kwargs={"normalize_embeddings": True},
+    )
 
 
-def _get_df_hash(df: pd.DataFrame) -> str:
-    """Stable hash of the DataFrame for cache invalidation."""
-    content = pd.util.hash_pandas_object(df).values.tobytes()
-    return hashlib.md5(content).hexdigest()
+# ═══════════════════════════════════════════════════════════════════════════
+# Chunking
+# ═══════════════════════════════════════════════════════════════════════════
 
 
 def _estimate_tokens(text: str) -> int:
-    """Rough token estimate (words × 1.3)."""
-    return int(len(text.split()) * 1.3)
+    """Estimate token count. Russian text tokenizes ~1.8x word count,
+    English ~1.3x. Use a blended estimate of 1.5x."""
+    return max(1, int(len(text.split()) * 1.5))
 
 
-@st.cache_resource
-def _get_embeddings(model_id: str):
-    """Load and cache the embedding model (persists across reruns)."""
-    if model_id.startswith("ollama:"):
-        return OllamaEmbeddings(model=model_id.removeprefix("ollama:"))
-    if model_id.startswith("intfloat/"):
-        return _E5Embeddings(model_name=model_id)
-    return HuggingFaceEmbeddings(model_name=model_id)
+def _format_message(row: pd.Series) -> str:
+    """Format a single message row into a readable line."""
+    ts = pd.to_datetime(row["datetime"]).strftime("%Y-%m-%d %H:%M")
+    sender = row.get("from") or row.get("actor") or "Unknown"
+    text = str(row.get("text", ""))
+    return f"[{ts}] {sender}: {text}"
 
 
+def _split_by_time_gap(
+    group: pd.DataFrame, gap_minutes: int = GAP_MINUTES
+) -> list[pd.DataFrame]:
+    """Split a chat group into conversation segments by time gaps."""
+    if group.empty:
+        return []
+    group = group.sort_values("datetime").reset_index(drop=True)
+    dt = pd.to_datetime(group["datetime"])
+    gaps = dt.diff() > pd.Timedelta(minutes=gap_minutes)
+    segment_ids = gaps.cumsum()
+    return [seg for _, seg in group.groupby(segment_ids) if len(seg) > 0]
+
+
+def _segment_to_chunks(
+    segment: pd.DataFrame,
+    chat_name: str,
+) -> list[Document]:
+    """Convert a conversation segment into token-limited Document chunks
+    with message-level overlap for context continuity."""
+    messages = []
+    for _, row in segment.iterrows():
+        text = str(row.get("text", ""))
+        if not text.strip():
+            continue
+        formatted = _format_message(row)
+        messages.append(
+            {
+                "formatted": formatted,
+                "tokens": _estimate_tokens(formatted),
+                "row": row,
+            }
+        )
+    if not messages:
+        return []
+
+    chunks = []
+    i = 0
+    while i < len(messages):
+        chunk_msgs = []
+        chunk_tokens = 0
+
+        # Collect messages up to token/message limits
+        j = i
+        while j < len(messages):
+            msg_tokens = messages[j]["tokens"]
+            if chunk_tokens + msg_tokens > MAX_CHUNK_TOKENS and chunk_msgs:
+                break
+            if len(chunk_msgs) >= MAX_CHUNK_MESSAGES:
+                break
+            chunk_msgs.append(messages[j])
+            chunk_tokens += msg_tokens
+            j += 1
+
+        if not chunk_msgs:
+            i += 1
+            continue
+
+        # Build chunk content (no header — metadata is stored separately)
+        content = "\n".join(m["formatted"] for m in chunk_msgs)
+
+        # Extract metadata for filtered retrieval
+        participants = list(
+            {
+                str(m["row"].get("from") or m["row"].get("actor") or "Unknown")
+                for m in chunk_msgs
+            }
+        )
+        first_dt = pd.to_datetime(chunk_msgs[0]["row"]["datetime"])
+        last_dt = pd.to_datetime(chunk_msgs[-1]["row"]["datetime"])
+
+        doc = Document(
+            page_content=content,
+            metadata={
+                "chat_name": chat_name,
+                "chat_id": str(chunk_msgs[0]["row"].get("chat_id", "")),
+                "participants": ", ".join(sorted(participants)),
+                "date_start": first_dt.isoformat(),
+                "date_end": last_dt.isoformat(),
+                "month": first_dt.strftime("%Y-%m"),
+                "message_count": len(chunk_msgs),
+            },
+        )
+        chunks.append(doc)
+
+        # Advance with overlap: step back by OVERLAP_MESSAGES
+        if j >= len(messages):
+            break
+        i = max(i + 1, j - OVERLAP_MESSAGES)
+
+    return chunks
+
+
+def _chunk_messages(df: pd.DataFrame, selected_chat_ids: set) -> list[Document]:
+    """Chunk messages from selected chats into Documents."""
+    mask = (
+        df["chat_id"].isin(selected_chat_ids)
+        & df["text"].notna()
+        & (df["text"].astype(str).str.strip() != "")
+        & (df["type"] == "message")
+    )
+    filtered = df[mask].copy()
+    if filtered.empty:
+        return []
+
+    all_docs = []
+    for (chat_id, chat_name), group in filtered.groupby(["chat_id", "chat_name"]):
+        segments = _split_by_time_gap(group)
+        for segment in segments:
+            docs = _segment_to_chunks(segment, chat_name)
+            all_docs.extend(docs)
+    return all_docs
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Vector store management
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _get_df_hash(df: pd.DataFrame) -> str:
+    """Compute a lightweight hash of key DataFrame columns."""
+    key_cols = ["chat_id", "date_unixtime", "from_id"]
+    cols = [c for c in key_cols if c in df.columns]
+    raw = pd.util.hash_pandas_object(df[cols]).values.tobytes()
+    return hashlib.md5(raw).hexdigest()
+
+
+def _save_meta(df_hash: str, selected_chat_ids: list, embedding_model: str) -> None:
+    """Persist index metadata for cache validation."""
+    PERSIST_DIR.mkdir(parents=True, exist_ok=True)
+    META_FILE.write_text(
+        json.dumps(
+            {
+                "df_hash": df_hash,
+                "selected_chat_ids": selected_chat_ids,
+                "embedding_model": embedding_model,
+                "timestamp": time.time(),
+            }
+        )
+    )
+
+
+def _load_meta() -> dict | None:
+    """Load persisted metadata."""
+    if META_FILE.exists():
+        try:
+            return json.loads(META_FILE.read_text())
+        except Exception:
+            return None
+    return None
+
+
+def _close_vector_store(vs: Chroma) -> None:
+    """Properly close a Chroma vector store, releasing SQLite connections."""
+    try:
+        vs._client._system.stop()
+        vs._client.clear_system_cache()
+    except Exception:
+        pass
+
+
+def _load_existing_store(embedding_model_id: str) -> Chroma | None:
+    """Try to load a persisted Chroma store from disk."""
+    if not PERSIST_DIR.exists():
+        return None
+    # Don't load if built with a different embedding model (dimension mismatch)
+    meta = _load_meta()
+    if meta and meta.get("embedding_model") != embedding_model_id:
+        return None
+    try:
+        embeddings = _get_embeddings(embedding_model_id)
+        store = Chroma(
+            persist_directory=str(PERSIST_DIR),
+            embedding_function=embeddings,
+        )
+        store._collection.count()
+        return store
+    except Exception:
+        shutil.rmtree(PERSIST_DIR, ignore_errors=True)
+        return None
+
+
+def build_vector_store(
+    df: pd.DataFrame,
+    selected_chat_ids: set,
+    embedding_model_id: str,
+    progress_callback=None,
+) -> Chroma | None:
+    """Build a Chroma vector store from chat messages."""
+    docs = _chunk_messages(df, selected_chat_ids)
+    if not docs:
+        return None
+
+    embeddings = _get_embeddings(embedding_model_id)
+
+    # Close existing store if any, then wipe directory
+    existing = st.session_state.get("rag_vector_store")
+    if existing is not None:
+        _close_vector_store(existing)
+        st.session_state.pop("rag_vector_store", None)
+
+    # Wipe persist dir; also clear Chroma's internal caches to avoid
+    # stale SQLite connections referencing an old schema.
+    if PERSIST_DIR.exists():
+        shutil.rmtree(PERSIST_DIR, ignore_errors=True)
+    try:
+        from chromadb.api.client import Client as _ChromaClient
+
+        _ChromaClient.clear_system_cache()
+    except Exception:
+        pass
+    PERSIST_DIR.mkdir(parents=True, exist_ok=True)
+
+    batch_size = 64
+    total_batches = (len(docs) + batch_size - 1) // batch_size
+
+    vector_store = None
+    for i in range(total_batches):
+        batch = docs[i * batch_size : (i + 1) * batch_size]
+        if progress_callback:
+            progress_callback(i + 1, total_batches)
+
+        for attempt in range(3):
+            try:
+                if vector_store is None:
+                    vector_store = Chroma.from_documents(
+                        documents=batch,
+                        embedding=embeddings,
+                        persist_directory=str(PERSIST_DIR),
+                    )
+                else:
+                    vector_store.add_documents(batch)
+                break
+            except Exception as e:
+                err = str(e).lower()
+                if ("readonly" in err or "no such table" in err) and attempt < 2:
+                    # Corrupted or locked DB — wipe and retry
+                    if vector_store is not None:
+                        _close_vector_store(vector_store)
+                        vector_store = None
+                    if PERSIST_DIR.exists():
+                        shutil.rmtree(PERSIST_DIR, ignore_errors=True)
+                    PERSIST_DIR.mkdir(parents=True, exist_ok=True)
+                    time.sleep(0.5)
+                    continue
+                raise
+
+    df_hash = _get_df_hash(df)
+    _save_meta(df_hash, list(selected_chat_ids), embedding_model_id)
+    return vector_store
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Retrieval & generation (streaming)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def retrieve_context(
+    vector_store: Chroma,
+    query: str,
+    chat_filter: str | None = None,
+) -> list[Document]:
+    """Retrieve relevant chunks using MMR for diversity."""
+    search_kwargs = {
+        "k": RETRIEVAL_FINAL_K,
+        "fetch_k": RETRIEVAL_K,
+        "lambda_mult": MMR_LAMBDA,
+    }
+    if chat_filter and chat_filter != "All chats":
+        search_kwargs["filter"] = {"chat_name": chat_filter}
+
+    retriever = vector_store.as_retriever(
+        search_type="mmr",
+        search_kwargs=search_kwargs,
+    )
+    return retriever.invoke(query)
+
+
+def stream_answer(
+    docs: list[Document],
+    query: str,
+    user_name: str,
+    llm_model: str,
+) -> Generator[str, None, None]:
+    """Stream an answer from the LLM given retrieved documents."""
+    if not docs:
+        yield "I couldn't find any relevant messages for that query."
+        return
+
+    # Build context with chunk metadata for grounding
+    context_parts = []
+    for i, doc in enumerate(docs, 1):
+        meta = doc.metadata
+        header = f"[Excerpt {i} — {meta.get('chat_name', '?')}, {meta.get('date_start', '?')[:10]}]"
+        context_parts.append(f"{header}\n{doc.page_content}")
+    context = "\n\n---\n\n".join(context_parts)
+
+    messages = [
+        SystemMessage(content=SYSTEM_PROMPT.format(user_name=user_name)),
+        HumanMessage(
+            content=(
+                "## Retrieved chat excerpts\n\n"
+                f"{context}\n\n"
+                "---\n\n"
+                f"## My question\n\n{query}"
+            )
+        ),
+    ]
+
+    llm = ChatOllama(model=llm_model, temperature=0.2, reasoning=False)
+    for chunk in llm.stream(messages):
+        if chunk.content:
+            yield chunk.content
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# User detection
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@st.cache_data
 def _detect_user(df: pd.DataFrame) -> str:
-    """Detect the user's name from Saved Messages, falling back to frequency heuristic."""
-    # Primary: sender name in Saved Messages is always the account owner
+    """Detect the current user's name from the DataFrame.
+    Primary: sender of Saved Messages. Fallback: most frequent sender in
+    private chats."""
     saved = df[df["chat_type"] == "saved_messages"]
     if not saved.empty:
-        senders = saved["from"].dropna().value_counts()
-        if not senders.empty:
-            return senders.index[0]
+        names = saved["from"].dropna()
+        if not names.empty:
+            return names.iloc[0]
 
-    # Fallback: most frequent sender across private chats
+    private = df[df["chat_type"] == "personal_chat"]
+    if not private.empty:
+        counts = private["from"].value_counts()
+        if not counts.empty:
+            return counts.index[0]
+    return "User"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Example questions
+# ═══════════════════════════════════════════════════════════════════════════
+
+_QUESTION_TEMPLATES = [
+    "Did {name} ever mention moving to another city?",
+    "What restaurants or cafes did {name} recommend?",
+    "Did {name} and I talk about any movies or books?",
+    "Has {name} shared any links or articles with me?",
+    "What did {name} complain about?",
+    "Did {name} mention any trips or travel plans?",
+    "What hobbies or interests did {name} bring up?",
+    "Did {name} recommend any music or podcasts?",
+]
+
+
+def _build_example_questions(df: pd.DataFrame, user_name: str) -> list[str]:
+    """Build example questions using real contact names from private chats."""
+    import random
+
     private = df[df["chat_type"] == "personal_chat"]
     if private.empty:
-        private = df
-    counts = private["from"].dropna().value_counts()
-    return counts.index[0] if not counts.empty else "Unknown"
+        templates = random.sample(_QUESTION_TEMPLATES, 4)
+        return [t.format(name="a friend") for t in templates]
+
+    senders = private[private["from"] != user_name]["from"]
+    senders = senders[
+        senders.notna() & ~senders.str.strip().str.lower().isin(["unknown", ""])
+    ]
+    contacts = senders.value_counts().head(8).index.tolist()
+    if not contacts:
+        templates = random.sample(_QUESTION_TEMPLATES, 4)
+        return [t.format(name="a friend") for t in templates]
+
+    # Pick 4 random template+contact pairs
+    templates = random.sample(_QUESTION_TEMPLATES, min(4, len(_QUESTION_TEMPLATES)))
+    chosen_contacts = [random.choice(contacts) for _ in templates]
+
+    return [t.format(name=c) for t, c in zip(templates, chosen_contacts)]
 
 
 def _check_ollama() -> bool:
@@ -169,376 +529,100 @@ def _check_ollama() -> bool:
         return False
 
 
-def _save_meta(df_hash: str, chat_ids: list, embedding_model: str) -> None:
-    """Write index metadata sidecar for cache invalidation."""
-    PERSIST_DIR.mkdir(parents=True, exist_ok=True)
-    META_FILE.write_text(
-        json.dumps(
-            {
-                "df_hash": df_hash,
-                "chat_ids": sorted(int(c) for c in chat_ids),
-                "embedding_model": embedding_model,
-            }
-        )
-    )
-
-
-def _load_meta() -> dict | None:
-    """Read persisted index metadata, or None if not found."""
-    if META_FILE.exists():
-        return json.loads(META_FILE.read_text())
-    return None
-
-
-# ═════════════════════════════════════════════════════════════════════════
-# Chunking
-# ═════════════════════════════════════════════════════════════════════════
-
-
-def _split_by_time_gap(group: pd.DataFrame, gap_minutes: int) -> list[pd.DataFrame]:
-    """Split a sorted chat DataFrame into conversation segments by silence gaps."""
-    if group.empty:
-        return []
-
-    segments: list[pd.DataFrame] = []
-    cut_indices = [0]
-
-    datetimes = group["datetime"].values
-    for i in range(1, len(datetimes)):
-        delta = (datetimes[i] - datetimes[i - 1]) / pd.Timedelta(minutes=1)
-        if delta > gap_minutes:
-            cut_indices.append(i)
-    cut_indices.append(len(group))
-
-    for start, end in zip(cut_indices, cut_indices[1:]):
-        seg = group.iloc[start:end]
-        if not seg.empty:
-            segments.append(seg)
-
-    return segments
-
-
-def _format_message(row: pd.Series) -> str:
-    sender = row.get("from") or row.get("actor") or "Unknown"
-    time_str = (
-        row["datetime"].strftime("%H:%M") if pd.notna(row.get("datetime")) else ""
-    )
-    return f"[{time_str}] {sender}: {row['text']}"
-
-
-def _segment_to_chunks(
-    segment: pd.DataFrame,
-    chat_name: str,
-    chat_id: str,
-    chat_type: str,
-) -> list[Document]:
-    """Convert a conversation segment into one or more Document chunks."""
-    msgs = [_format_message(row) for _, row in segment.iterrows()]
-    msg_tokens = [_estimate_tokens(m) for m in msgs]
-
-    date_start = str(segment["date_only"].iloc[0])
-    date_end = str(segment["date_only"].iloc[-1])
-    date_label = date_start if date_start == date_end else f"{date_start} → {date_end}"
-
-    participants = segment["from"].dropna().unique().tolist()
-
-    def _make_doc(lines: list[str], chunk_idx: int) -> Document:
-        content = f"Chat: {chat_name} | Date: {date_label}\n\n" + "\n".join(lines)
-        return Document(
-            page_content=content,
-            metadata={
-                "chat_id": str(chat_id),
-                "chat_name": str(chat_name),
-                "chat_type": str(chat_type),
-                "date_start": date_start,
-                "date_end": date_end,
-                "participants": ", ".join(participants[:10]),
-                "message_count": len(lines),
-                "chunk_index": chunk_idx,
-            },
-        )
-
-    # Single-chunk fast path
-    total_tokens = sum(msg_tokens)
-    if total_tokens <= MAX_CHUNK_TOKENS and len(msgs) <= MAX_CHUNK_MESSAGES:
-        return [_make_doc(msgs, 0)]
-
-    # Token-aware sliding window
-    chunks: list[Document] = []
-    start = 0
-    idx = 0
-
-    while start < len(msgs):
-        end = start + 1
-        current_tokens = msg_tokens[start]
-
-        while end < len(msgs):
-            if current_tokens + msg_tokens[end] > MAX_CHUNK_TOKENS:
-                break
-            if (end - start) >= MAX_CHUNK_MESSAGES:
-                break
-            current_tokens += msg_tokens[end]
-            end += 1
-
-        chunks.append(_make_doc(msgs[start:end], idx))
-        idx += 1
-
-        if end >= len(msgs):
-            break
-
-        # Overlap: step back by ~OVERLAP_TOKENS worth of messages
-        overlap_tokens = 0
-        overlap_start = end
-        while overlap_start > start and overlap_tokens < OVERLAP_TOKENS:
-            overlap_start -= 1
-            overlap_tokens += msg_tokens[overlap_start]
-        start = max(overlap_start, start + 1)  # ensure progress
-
-    return chunks
-
-
-def _chunk_messages(df: pd.DataFrame, selected_chat_ids: set) -> list[Document]:
-    """
-    Chunk messages into Documents using conversation-aware splitting.
-
-    Strategy:
-        1. Filter to real text messages in selected chats
-        2. Group by chat
-        3. Within each chat, split on silence gaps (>2 h → new conversation)
-        4. Each conversation segment → 1+ token-limited chunks with metadata
-    """
-    text_df = df[
-        (df["text"].notna())
-        & (df["text"].str.strip() != "")
-        & (df["type"] == "message")
-        & (df["chat_id"].isin(selected_chat_ids))
-    ].copy()
-
-    if text_df.empty:
-        return []
-
-    text_df = text_df.sort_values(["chat_id", "datetime"])
-    documents: list[Document] = []
-
-    for (chat_id, chat_name), group in text_df.groupby(["chat_id", "chat_name"]):
-        chat_type = (
-            group["chat_type"].iloc[0] if "chat_type" in group.columns else "unknown"
-        )
-        segments = _split_by_time_gap(group, GAP_MINUTES)
-        for segment in segments:
-            documents.extend(
-                _segment_to_chunks(
-                    segment, str(chat_name), str(chat_id), str(chat_type)
-                )
-            )
-
-    return documents
-
-
-# ═════════════════════════════════════════════════════════════════════════
-# Vector store
-# ═════════════════════════════════════════════════════════════════════════
-
-
-def _close_vector_store() -> None:
-    """Release the ChromaDB client so SQLite connections are closed."""
-    vs = st.session_state.pop("rag_vector_store", None)
-    if vs is not None:
-        try:
-            vs._client._system.stop()
-            vs._client.clear_system_cache()
-        except Exception:
-            pass
-
-
-def build_vector_store(
-    df: pd.DataFrame,
-    selected_chat_ids: set,
-    embedding_model_id: str,
-    progress_callback=None,
-) -> Chroma | None:
-    """Build a persistent ChromaDB vector store from messages."""
-    documents = _chunk_messages(df, selected_chat_ids)
-    if not documents:
-        return None
-
-    embeddings = _get_embeddings(embedding_model_id)
-
-    # Close any existing client before wiping the directory
-    _close_vector_store()
-    if PERSIST_DIR.exists():
-        shutil.rmtree(PERSIST_DIR)
-
-    batch_size = 256
-    total_batches = (len(documents) + batch_size - 1) // batch_size
-
-    first_batch = documents[:batch_size]
-    if progress_callback:
-        progress_callback(1, total_batches)
-
-    vector_store = Chroma.from_documents(
-        documents=first_batch,
-        embedding=embeddings,
-        collection_name="tglens_messages",
-        persist_directory=str(PERSIST_DIR),
-    )
-
-    for i in range(1, total_batches):
-        start_idx = i * batch_size
-        end_idx = min(start_idx + batch_size, len(documents))
-        vector_store.add_documents(documents[start_idx:end_idx])
-        if progress_callback:
-            progress_callback(i + 1, total_batches)
-
-    # Save metadata sidecar for cache invalidation
-    _save_meta(
-        df_hash=_get_df_hash(df),
-        chat_ids=list(selected_chat_ids),
-        embedding_model=embedding_model_id,
-    )
-
-    return vector_store
-
-
-def _load_existing_store(embedding_model_id: str) -> Chroma | None:
-    """Load a previously persisted vector store."""
-    if not PERSIST_DIR.exists():
-        return None
-    embeddings = _get_embeddings(embedding_model_id)
-    return Chroma(
-        collection_name="tglens_messages",
-        embedding_function=embeddings,
-        persist_directory=str(PERSIST_DIR),
-    )
-
-
-# ═════════════════════════════════════════════════════════════════════════
-# Query
-# ═════════════════════════════════════════════════════════════════════════
-
-
-def retrieve_context(
-    vector_store: Chroma,
-    query: str,
-    chat_filter: str | None = None,
-    k: int = 8,
-) -> list[Document]:
-    """Retrieve relevant document chunks for a query."""
-    search_kwargs: dict = {"k": k}
-    if chat_filter:
-        search_kwargs["filter"] = {"chat_name": chat_filter}
-
-    retriever = vector_store.as_retriever(search_kwargs=search_kwargs)
-    return retriever.invoke(query)
-
-
-def stream_answer(
-    docs: list[Document],
-    query: str,
-    user_name: str,
-    llm_model: str,
-):
-    """Yield streamed token chunks from the LLM."""
-    context = "\n\n---\n\n".join(doc.page_content for doc in docs)
-
-    llm = ChatOllama(model=llm_model, temperature=0.3)
-    messages = [
-        SystemMessage(content=SYSTEM_PROMPT.format(user_name=user_name)),
-        HumanMessage(
-            content=f"Chat excerpts (context retrieved from the vector store):\n\n{context}\n\n---\nMy question is: {query}"
-        ),
-    ]
-
-    for chunk in llm.stream(messages):
-        if chunk.content:
-            yield chunk.content
-
-
-# ═════════════════════════════════════════════════════════════════════════
-# Streamlit page
-# ═════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════
+# Streamlit UI
+# ═══════════════════════════════════════════════════════════════════════════
 
 
 def render_rag_page(messages_df: pd.DataFrame) -> None:
-    """Render the full "Chat with Data" page."""
-
-    st.header("Chat with Your Data")
+    """Render the RAG chat page."""
+    st.header("💬 Chat with Your Data")
     st.caption(
-        "Ask questions about your Telegram history · "
-        "runs fully locally via Ollama + sentence-transformers"
+        "Ask questions about your Telegram history. "
+        "Runs fully locally via Ollama + sentence-transformers."
     )
 
     user_name = _detect_user(messages_df)
     df_hash = _get_df_hash(messages_df)
 
-    # ── Settings (sidebar) ───────────────────────────────────────────────
+    # ── Sidebar settings ─────────────────────────────────────────────────
+    emb_options = list(EMBEDDING_MODELS.keys())
+    llm_options = list(LLM_MODELS.keys())
 
     with st.sidebar:
-        with st.expander("⚙️ RAG Settings"):
-            embedding_choice = st.selectbox(
+        with st.expander("⚙️ RAG Settings", expanded=True):
+            emb_label = st.selectbox(
                 "Embedding model",
-                options=list(EMBEDDING_MODELS.keys()),
-                index=0,
-                help="Multilingual E5 models support English and Russian well.",
+                options=emb_options,
+                index=st.session_state.get("rag_emb_index", 0),
             )
-            llm_choice = st.selectbox(
-                "LLM model (Ollama)",
-                options=list(LLM_MODELS.keys()),
-                index=0,
+            st.session_state["rag_emb_index"] = emb_options.index(emb_label)
+            emb_model_id = EMBEDDING_MODELS[emb_label]
+
+            llm_label = st.selectbox(
+                "LLM model",
+                options=llm_options,
+                index=st.session_state.get("rag_llm_index", 0),
                 help="Make sure you've pulled the model: `ollama pull <model>`",
             )
-
-            embedding_model_id = EMBEDDING_MODELS[embedding_choice]
-            llm_model_id = LLM_MODELS[llm_choice]
+            st.session_state["rag_llm_index"] = llm_options.index(llm_label)
+            llm_model_id = LLM_MODELS[llm_label]
 
             # Chat selection
-            chat_info = (
-                messages_df.groupby(["chat_id", "chat_name", "chat_type"])
+            chat_options = (
+                messages_df.groupby(["chat_id", "chat_name"])
                 .size()
                 .reset_index(name="count")
                 .sort_values("count", ascending=False)
             )
-            chat_options = {
-                f"{row['chat_name']}  ·  {row['chat_type']}  ·  {row['count']:,} msgs": row[
-                    "chat_id"
-                ]
-                for _, row in chat_info.iterrows()
+            chat_display = {
+                f"{row['chat_name']} (ID: {row['chat_id']})": row["chat_id"]
+                for _, row in chat_options.iterrows()
             }
-            selected_labels = st.multiselect(
+            selected_display = st.multiselect(
                 "Chats to index",
-                options=list(chat_options.keys()),
-                default=list(chat_options.keys()),
-                help="Select which chats to include in the search index.",
+                options=list(chat_display.keys()),
+                default=list(chat_display.keys()),
             )
-            selected_chat_ids = {chat_options[label] for label in selected_labels}
+            selected_ids = {chat_display[d] for d in selected_display}
 
+            # Index actions
             st.divider()
+            has_index = "rag_vector_store" in st.session_state
 
-            # Action buttons
-            build_clicked = st.button(
-                "Build Index", type="primary", icon="🔨", use_container_width=True
-            )
-            rebuild_clicked = st.button(
-                "Rebuild Index", icon="🔄", use_container_width=True
-            )
-            clear_clicked = st.button("Clear Chat", icon="🗑️", use_container_width=True)
+            if st.button(
+                "🔨 Rebuild Index" if has_index else "🔨 Build Index",
+                type="primary",
+                use_container_width=True,
+            ):
+                st.session_state["rag_build_requested"] = True
 
-    # ── Handle button actions ────────────────────────────────────────────
+            if has_index and st.button("🗑️ Clear Index", use_container_width=True):
+                _close_vector_store(st.session_state.rag_vector_store)
+                del st.session_state["rag_vector_store"]
+                st.session_state.pop("rag_df_hash", None)
+                st.session_state.pop("rag_emb_model", None)
+                shutil.rmtree(PERSIST_DIR, ignore_errors=True)
+                st.rerun()
 
-    if clear_clicked:
-        st.session_state.rag_chat_history = []
-        st.rerun()
+            if st.button("🗑️ Clear Chat", use_container_width=True):
+                st.session_state["rag_chat_history"] = []
+                st.rerun()
 
-    if rebuild_clicked:
-        _close_vector_store()
-        for key in ("rag_df_hash", "rag_embedding_model"):
-            st.session_state.pop(key, None)
-        if PERSIST_DIR.exists():
-            shutil.rmtree(PERSIST_DIR)
-        build_clicked = True
+            # Index stats
+            meta = _load_meta()
+            if meta and "timestamp" in meta:
+                from datetime import datetime, timezone
 
-    if build_clicked:
-        if not selected_chat_ids:
+                built = datetime.fromtimestamp(meta["timestamp"], tz=timezone.utc)
+                st.caption(
+                    f"Index built: {built:%Y-%m-%d %H:%M UTC}\n\n"
+                    f"Embedding: {meta.get('embedding_model', '?')}"
+                )
+
+    # ── Build index if requested ─────────────────────────────────────────
+    if st.session_state.pop("rag_build_requested", False):
+        if not selected_ids:
             st.error("Select at least one chat to index.")
             return
 
@@ -550,122 +634,134 @@ def render_rag_page(messages_df: pd.DataFrame) -> None:
         try:
             vs = build_vector_store(
                 messages_df,
-                selected_chat_ids,
-                embedding_model_id,
+                selected_ids,
+                emb_model_id,
                 progress_callback=_on_progress,
             )
             if vs is None:
                 st.error("No text messages found in the selected chats.")
                 return
-            st.session_state.rag_vector_store = vs
-            st.session_state.rag_df_hash = df_hash
-            st.session_state.rag_embedding_model = embedding_model_id
+            st.session_state["rag_vector_store"] = vs
+            st.session_state["rag_df_hash"] = df_hash
+            st.session_state["rag_emb_model"] = emb_model_id
             bar.progress(1.0, text="Done!")
+            time.sleep(0.5)
             st.rerun()
         except Exception as e:
             st.error(f"Failed to build index: {e}")
-        return
+            return
 
-    # ── Resolve vector store (session state → disk → not found) ──────────
-
-    hash_match = st.session_state.get("rag_df_hash") == df_hash
-    model_match = st.session_state.get("rag_embedding_model") == embedding_model_id
+    # ── Load or validate index ───────────────────────────────────────────
+    emb_match = st.session_state.get("rag_emb_model") == emb_model_id
     has_store = "rag_vector_store" in st.session_state
+    meta = _load_meta()
+    disk_hash_match = meta is not None and meta.get("df_hash") == df_hash
 
-    if has_store and hash_match and model_match:
-        vector_store = st.session_state.rag_vector_store
-    else:
-        meta = _load_meta()
-        if (
-            meta
-            and meta.get("df_hash") == df_hash
-            and meta.get("embedding_model") == embedding_model_id
-        ):
-            existing = _load_existing_store(embedding_model_id)
-            if existing:
-                st.session_state.rag_vector_store = existing
-                st.session_state.rag_df_hash = df_hash
-                st.session_state.rag_embedding_model = embedding_model_id
-                vector_store = existing
-            else:
-                vector_store = None
+    if has_store and emb_match and st.session_state.get("rag_df_hash") == df_hash:
+        vector_store = st.session_state["rag_vector_store"]
+    elif has_store and not emb_match:
+        # Dropdown changed but in-memory store uses old model — release it
+        _close_vector_store(st.session_state["rag_vector_store"])
+        del st.session_state["rag_vector_store"]
+        st.session_state.pop("rag_df_hash", None)
+        st.session_state.pop("rag_emb_model", None)
+        # Try loading from disk (works if dropdown matches the on-disk model)
+        existing = _load_existing_store(emb_model_id)
+        if existing and disk_hash_match:
+            st.session_state["rag_vector_store"] = existing
+            st.session_state["rag_df_hash"] = df_hash
+            st.session_state["rag_emb_model"] = emb_model_id
+            vector_store = existing
         else:
-            vector_store = None
-
-    if vector_store is None:
-        st.info(
-            "Open **⚙️ RAG Settings** in the sidebar to select chats and "
-            "**Build Index** before you can start chatting."
-        )
-        return
+            disk_model = meta.get("embedding_model", "") if meta else ""
+            if disk_model and disk_model != emb_model_id:
+                st.warning(
+                    f"Index on disk was built with **{disk_model}**. "
+                    "Select that model to reuse it, or **Rebuild Index** "
+                    "with the current model."
+                )
+            else:
+                st.info(
+                    "👈 Open **RAG Settings** in the sidebar and click "
+                    "**Build Index** to get started."
+                )
+            return
+    else:
+        existing = _load_existing_store(emb_model_id)
+        if existing and disk_hash_match:
+            st.session_state["rag_vector_store"] = existing
+            st.session_state["rag_df_hash"] = df_hash
+            st.session_state["rag_emb_model"] = emb_model_id
+            vector_store = existing
+        else:
+            disk_model = meta.get("embedding_model", "") if meta else ""
+            if disk_model and disk_model != emb_model_id:
+                st.warning(
+                    f"Index on disk was built with **{disk_model}**. "
+                    "Select that model to reuse it, or **Rebuild Index** "
+                    "with the current model."
+                )
+            else:
+                st.info(
+                    "👈 Open **RAG Settings** in the sidebar and click "
+                    "**Build Index** to get started."
+                )
+            return
 
     chunk_count = vector_store._collection.count()
     st.caption(f"✅ Index ready — **{chunk_count:,}** chunks from your selected chats")
 
-    # ── Initialize chat history ──────────────────────────────────────────
-
+    # ── Chat history ─────────────────────────────────────────────────────
     if "rag_chat_history" not in st.session_state:
-        st.session_state.rag_chat_history = []
+        st.session_state["rag_chat_history"] = []
 
-    # ── Resolve pending example query (from previous rerun) ──────────────
+    history = st.session_state["rag_chat_history"]
 
-    pending_query: str | None = None
-    if "_rag_pending_query" in st.session_state:
-        pending_query = st.session_state.pop("_rag_pending_query")
+    # Seed greeting with example questions on first load
+    if not history:
+        examples = _build_example_questions(messages_df, user_name)
+        history.append(
+            {
+                "role": "assistant",
+                "content": (
+                    "👋 Hi! I can answer questions about your Telegram chats. "
+                    "Try one of these:"
+                ),
+                "examples": examples,
+            }
+        )
 
-    # ── Greeting (shown only when chat history is empty) ─────────────────
-
-    if not st.session_state.rag_chat_history and pending_query is None:
-        examples = _build_example_questions(messages_df)
-
-        with st.chat_message("assistant"):
-            st.markdown(
-                "Hi! I've indexed your chats and I'm ready to answer questions.\n\n"
-                "Here are some things you can ask:"
-            )
-
-        cols = st.columns(2, gap="small")
-        for i, example in enumerate(examples):
-            with cols[i % 2]:
-                if st.button(
-                    example,
-                    key=f"rag_example_{i}",
-                    use_container_width=True,
-                ):
-                    st.session_state.rag_chat_history.append(
-                        {"role": "user", "content": example}
-                    )
-                    st.session_state._rag_pending_query = example
-                    st.rerun()
-
-    # ── Render chat history ──────────────────────────────────────────────
-
-    for msg in st.session_state.rag_chat_history:
+    # Render chat history
+    for i, msg in enumerate(history):
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
+            # Render clickable example question buttons
+            if msg.get("examples"):
+                cols = st.columns(len(msg["examples"]))
+                for j, (col, q) in enumerate(zip(cols, msg["examples"])):
+                    if col.button(q, use_container_width=True, key=f"rag_ex_{i}_{j}"):
+                        st.session_state["rag_pending_query"] = q
+                        st.rerun()
             if msg["role"] == "assistant" and msg.get("sources"):
                 with st.expander("📄 Sources"):
-                    for doc in msg["sources"]:
-                        m = doc.metadata
+                    for src in msg["sources"]:
+                        meta = src.metadata
                         st.caption(
-                            f"**{m.get('chat_name')}** · {m.get('date_start')} · "
-                            f"{m.get('message_count')} messages"
+                            f"**{meta.get('chat_name', '?')}** · "
+                            f"{meta.get('date_start', '?')[:10]}"
                         )
-                        st.code(doc.page_content[:500], language=None)
+                        st.code(src.page_content, language=None)
 
     # ── Chat input ───────────────────────────────────────────────────────
-
-    input_query = st.chat_input("Ask about your chats…")
-    query = input_query or pending_query
+    user_input = st.chat_input("Ask about your chats…")
+    query = user_input or st.session_state.pop("rag_pending_query", None)
 
     if query:
-        # Add user message (skip if it was already added by example button)
-        if input_query:
-            st.session_state.rag_chat_history.append({"role": "user", "content": query})
-            with st.chat_message("user"):
-                st.markdown(query)
+        # Show user message
+        with st.chat_message("user"):
+            st.markdown(query)
+        history.append({"role": "user", "content": query})
 
-        # Generate response
         with st.chat_message("assistant"):
             if not _check_ollama():
                 err = (
@@ -677,43 +773,31 @@ def render_rag_page(messages_df: pd.DataFrame) -> None:
                     "```"
                 )
                 st.warning(err)
-                st.session_state.rag_chat_history.append(
-                    {"role": "assistant", "content": err}
-                )
+                history.append({"role": "assistant", "content": err})
             else:
                 try:
+                    # Retrieve
                     with st.spinner("Searching…"):
-                        sources = retrieve_context(vector_store, query)
+                        docs = retrieve_context(vector_store, query)
 
-                    if not sources:
-                        msg = "No relevant messages found for your query."
-                        st.markdown(msg)
-                        st.session_state.rag_chat_history.append(
-                            {"role": "assistant", "content": msg}
-                        )
-                    else:
-                        answer = st.write_stream(
-                            stream_answer(sources, query, user_name, llm_model_id)
-                        )
+                    # Stream answer
+                    response = st.write_stream(
+                        stream_answer(docs, query, user_name, llm_model_id)
+                    )
+                    if docs:
                         with st.expander("📄 Sources"):
-                            for doc in sources:
-                                m = doc.metadata
+                            for src in docs:
+                                meta = src.metadata
                                 st.caption(
-                                    f"**{m.get('chat_name')}** · "
-                                    f"{m.get('date_start')} · "
-                                    f"{m.get('message_count')} messages"
+                                    f"**{meta.get('chat_name', '?')}** · "
+                                    f"{meta.get('date_start', '?')[:10]}"
                                 )
-                                st.code(doc.page_content[:500], language=None)
-                        st.session_state.rag_chat_history.append(
-                            {
-                                "role": "assistant",
-                                "content": answer,
-                                "sources": sources,
-                            }
-                        )
+                                st.code(src.page_content, language=None)
+
+                    history.append(
+                        {"role": "assistant", "content": response, "sources": docs}
+                    )
                 except Exception as e:
                     err = f"Error: {e}"
                     st.error(err)
-                    st.session_state.rag_chat_history.append(
-                        {"role": "assistant", "content": err}
-                    )
+                    history.append({"role": "assistant", "content": err})
