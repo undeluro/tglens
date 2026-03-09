@@ -47,9 +47,9 @@ def analytics_page():
         with col3:
             st.markdown("""
             **Step 3: Explore**
-            - View general overview
-            - Analyze chat patterns
-            - Discover insights per contact
+            - View general overview & chat patterns
+            - Analyze insights per contact or group
+            - Chat with your data via local AI (requires [Ollama](https://ollama.com))
             """)
 
         return
