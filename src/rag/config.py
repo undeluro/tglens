@@ -27,16 +27,16 @@ LLM_MODELS = {
 
 # ── Retrieval parameters ─────────────────────────────────────────────────
 
-RETRIEVAL_K = 12  # fetch more candidates for MMR
-RETRIEVAL_FINAL_K = 6  # return after diversity filtering
+RETRIEVAL_K = 25  # fetch more candidates for MMR
+RETRIEVAL_FINAL_K = 15  # return after diversity filtering
 MMR_LAMBDA = 0.7  # balance relevance (1.0) vs diversity (0.0)
 
 # ── Chunking parameters ─────────────────────────────────────────────────
 
-GAP_MINUTES = 120  # silence gap that splits conversations
+GAP_MINUTES = 150  # silence gap that splits conversations
 MAX_CHUNK_TOKENS = 400
 MAX_CHUNK_MESSAGES = 50
-OVERLAP_MESSAGES = 3  # message-level overlap for context continuity
+OVERLAP_MESSAGES = 5  # message-level overlap for context continuity
 
 # ── Persistence ──────────────────────────────────────────────────────────
 
