@@ -1,26 +1,29 @@
-# tglens - Telegram export analytics
-Gain insights into your Telegram chats and uncover trends in your messaging behavior.
+# tglens - Telegram export analytics & chat
+Gain insights into your Telegram chats, uncover trends in your messaging behavior, and ask questions about your chat history using a fully local RAG pipeline (time-aware chunking, ChromaDB vector store, MMR retrieval, streaming Ollama generation).
 
-### Created with
-- **Streamlit** - web interface
-- **Plotly** - interactive charts and graphs  
-- **Pandas** - data processing
-- **WordCloud** - word visualization
+<p>
+  <img src="media/dashboard_demo.png" alt="Analytics dashboard demo" width="49%">
+  <img src="media/rag_demo.png" alt="Chat with Your Data demo" width="49%">
+</p>
+
+### Built with
+- **Streamlit** — web interface
+- **Plotly** — interactive charts and graphs
+- **Pandas** — data processing
+- **WordCloud** — word visualization
+- **LangChain + ChromaDB** — RAG pipeline
+- **Ollama** — local LLM and embeddings
 
 ## Usage
-~~‼️**WARNING**‼️ This app will be hosted on Streamlit Community Cloud. BUT I would definitely NOT recommend you upload any of your private info to a server you don't fully trust and know how it works (please don't do that). Even though Streamlit claims they store your data only in RAM, so it's deleted right after the end of session (which I think is probably true). Anyway, you will see a warning when using the hosted version of the app.~~
-
-~~Obviously, the easiest workaround is to run app locally and it's **really easy** even if you haven't done any of these things before.~~
-
-*After some thinking, it was decided to leave the app local only.*
 
 ### 🔒 Privacy first
 Your data never leaves your computer. Everything runs locally.
 
 ### Step 0: Prerequisites
 - **Git** 
-- **uv** - Python package manager ([install here](https://docs.astral.sh/uv/getting-started/installation/))
+- **uv** — Python package manager ([install here](https://docs.astral.sh/uv/getting-started/installation/))
 - **Python 3.13+** (uv will install if not found)
+- **Ollama** *(for RAG, optional)* — [install here](https://ollama.com)
 
 ### Step 1: Get your data
 1. Open **Telegram Desktop** (not mobile, not web version, not MacOS native). You need cross-platform Qt version.
@@ -29,7 +32,7 @@ Your data never leaves your computer. Everything runs locally.
 2. Go to Settings → Advanced (scroll down) → Export Telegram data
 
 3. We need `Personal Chats` + `Private groups`(uncheck `Only my messages` there), so to speed up the process I recommend you check only them and uncheck media export. Then choose **JSON** format and export your chats.
-<img src="media/image.png" alt="export settings example" width="300">
+<img src="media/export_settings.png" alt="export settings example" width="300">
 
 4. Wait for the export to complete.
 
