@@ -27,8 +27,8 @@ LLM_MODELS = {
 
 # ── Retrieval parameters ─────────────────────────────────────────────────
 
-RETRIEVAL_K = 25  # fetch more candidates for MMR
-RETRIEVAL_FINAL_K = 15  # return after diversity filtering
+RETRIEVAL_K = 20  # fetch more candidates for MMR
+RETRIEVAL_FINAL_K = 10  # return after diversity filtering
 MMR_LAMBDA = 0.7  # balance relevance (1.0) vs diversity (0.0)
 
 # ── Chunking parameters ─────────────────────────────────────────────────
