@@ -13,7 +13,6 @@ Gain insights into your Telegram chats, uncover trends in your messaging behavio
 - **WordCloud** — word visualization
 - **LangChain + ChromaDB** — RAG pipeline
 - **Ollama** — local LLM and embeddings
-- **sentence-transformers** — HuggingFace embeddings
 
 ## Usage
 
@@ -24,7 +23,7 @@ Your data never leaves your computer. Everything runs locally.
 - **Git** 
 - **uv** — Python package manager ([install here](https://docs.astral.sh/uv/getting-started/installation/))
 - **Python 3.13+** (uv will install if not found)
-- **Ollama** *(for Chat with Your Data, optional)* — [install here](https://ollama.com)
+- **Ollama** *(for RAG, optional)* — [install here](https://ollama.com)
 
 ### Step 1: Get your data
 1. Open **Telegram Desktop** (not mobile, not web version, not MacOS native). You need cross-platform Qt version.
