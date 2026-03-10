@@ -2,8 +2,8 @@
 Gain insights into your Telegram chats, uncover trends in your messaging behavior, and ask questions about your chat history using a fully local RAG pipeline (time-aware chunking, ChromaDB vector store, MMR retrieval, streaming Ollama generation).
 
 <p>
-  <img src="media/dashboard_demo.png" alt="Analytics dashboard demo" width="49%">
-  <img src="media/rag_demo.png" alt="Chat with Your Data demo" width="49%">
+  <img src="media/dashboard_demo.png" alt="Analytics dashboard demo" width="200">
+  <img src="media/rag_demo.png" alt="Chat with Your Data demo" width="250">
 </p>
 
 ### Built with
@@ -23,7 +23,7 @@ Your data never leaves your computer. Everything runs locally.
 - **Git** 
 - **uv** — Python package manager ([install here](https://docs.astral.sh/uv/getting-started/installation/))
 - **Python 3.13+** (uv will install if not found)
-- **Ollama** *(for RAG, optional)* — [install here](https://ollama.com)
+- **Ollama** *(for RAG, optional)* ([install here](https://ollama.com))
 
 ### Step 1: Get your data
 1. Open **Telegram Desktop** (not mobile, not web version, not MacOS native). You need cross-platform Qt version.
@@ -32,7 +32,7 @@ Your data never leaves your computer. Everything runs locally.
 2. Go to Settings → Advanced (scroll down) → Export Telegram data
 
 3. We need `Personal Chats` + `Private groups`(uncheck `Only my messages` there), so to speed up the process I recommend you check only them and uncheck media export. Then choose **JSON** format and export your chats.
-<img src="media/export_settings.png" alt="export settings example" width="300">
+<img src="media/export_settings.png" alt="export settings example" width="200">
 
 4. Wait for the export to complete.
 
@@ -47,6 +47,14 @@ uv run streamlit run app.py
 ```
 
 That's it.
+
+### Troubleshooting
+
+If you’re noticing poor RAG performance, sometimes a simpler version of the RAG pipeline works better. You can revert to it with:
+
+```bash
+git checkout 26a3952
+```
 
 ## Contributing
 Found a bug? Have an idea? Feel free to open an issue or submit a pull request.
