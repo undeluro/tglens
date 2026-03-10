@@ -2,8 +2,8 @@
 Gain insights into your Telegram chats, uncover trends in your messaging behavior, and ask questions about your chat history using a fully local RAG pipeline (time-aware chunking, ChromaDB vector store, MMR retrieval, streaming Ollama generation).
 
 <p>
-  <img src="media/dashboard_demo.png" alt="Analytics dashboard demo" width="200">
-  <img src="media/rag_demo.png" alt="Chat with Your Data demo" width="250">
+  <img src="media/dashboard_demo.png" alt="Analytics dashboard demo" width="250">
+  <img src="media/rag_demo.png" alt="Chat with Your Data demo" width="300">
 </p>
 
 ### Built with
@@ -32,7 +32,7 @@ Your data never leaves your computer. Everything runs locally.
 2. Go to Settings → Advanced (scroll down) → Export Telegram data
 
 3. We need `Personal Chats` + `Private groups`(uncheck `Only my messages` there), so to speed up the process I recommend you check only them and uncheck media export. Then choose **JSON** format and export your chats.
-<img src="media/export_settings.png" alt="export settings example" width="200">
+<img src="media/export_settings.png" alt="export settings example" width="250">
 
 4. Wait for the export to complete.
 
