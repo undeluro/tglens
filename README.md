@@ -1,10 +1,12 @@
 # tglens - Telegram export analytics & chat
 Gain insights into your Telegram chats, uncover trends in your messaging behavior, and ask questions about your chat history using a fully local RAG pipeline (time-aware chunking, ChromaDB vector store, MMR retrieval, streaming Ollama generation).
 
-<p>
-  <img src="media/dashboard_demo.png" alt="Analytics dashboard demo" width="250">
-  <img src="media/rag_demo.png" alt="Chat with Your Data demo" width="300">
-</p>
+
+  <div align="center">
+    <img src="media/dashboard_demo.png" alt="Analytics dashboard demo" height="300">
+    <img src="media/rag_demo.png" alt="Chat with Your Data demo" height="300">
+  </div>
+
 
 ### Built with
 - **Streamlit** — web interface
